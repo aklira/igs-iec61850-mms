@@ -541,7 +541,7 @@ The agent does not wait for these; it records the impact and continues with what
 | A7 Data-access interop | [x] |
 | S1 Parser and bounds | [x] |
 | S2 Semantic checks and templates | [x] |
-| S3 Model and communication parameters from SCL | [ ] |
+| S3 Model and communication parameters from SCL | [x] |
 | D1 Static datasets | [ ] |
 | D2 Dynamic datasets | [ ] |
 | D3 URCB state machine | [ ] |

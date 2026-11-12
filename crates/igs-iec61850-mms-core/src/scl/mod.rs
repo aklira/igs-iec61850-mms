@@ -12,6 +12,7 @@
 //!
 //! Every bound is checked while the tree is built, and the recursion of the builder is bounded by [`DEPTH_CEILING`].
 
+pub mod build;
 mod generated;
 mod schema;
 pub mod validate;
@@ -79,8 +80,10 @@ pub struct Element {
     pub line: u32,
     /// The attributes, in document order, as (local name, value).
     pub attributes: Vec<(String, String)>,
-    /// The child elements, in document order. Text is not kept by this parser.
+    /// The child elements, in document order.
     pub children: Vec<Element>,
+    /// The direct text of the element, trimmed (its character data outside the children; empty when there is none).
+    pub text: String,
 }
 
 impl Element {
@@ -313,11 +316,25 @@ fn build(
         )?);
     }
     let line = node.document().text_pos_at(node.range().start).row;
+    let raw: String = node
+        .children()
+        .filter(roxmltree::Node::is_text)
+        .filter_map(|text| text.text())
+        .collect();
+    let text = raw.trim().to_string();
+    if text.len() > limits.max_value_len {
+        return Err(SclError::ValueTooLong {
+            element: name,
+            attribute: "#text".to_string(),
+            limit: limits.max_value_len,
+        });
+    }
     Ok(Element {
         name,
         namespace: node.tag_name().namespace().map(str::to_string),
         line,
         attributes,
         children,
+        text,
     })
 }

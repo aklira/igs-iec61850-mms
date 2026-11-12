@@ -14,6 +14,10 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+# The SCL import (tasks S1 to S3) of the core crate, for the configuration tests of this crate.
+scl = ["igs-iec61850-mms-core/scl"]
+
 [dependencies]
 # The command line of the binaries (task A7; MIT or Apache-2.0, the same derive as the MMS client).
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }

@@ -482,15 +482,15 @@ impl Checker<'_> {
 }
 
 /// The templates of the document, by identifier.
-struct Templates<'a> {
-    ln_types: HashMap<&'a str, &'a Element>,
-    do_types: HashMap<&'a str, &'a Element>,
-    da_types: HashMap<&'a str, &'a Element>,
-    enum_types: HashMap<&'a str, &'a Element>,
+pub(super) struct Templates<'a> {
+    pub(super) ln_types: HashMap<&'a str, &'a Element>,
+    pub(super) do_types: HashMap<&'a str, &'a Element>,
+    pub(super) da_types: HashMap<&'a str, &'a Element>,
+    pub(super) enum_types: HashMap<&'a str, &'a Element>,
 }
 
 impl<'a> Templates<'a> {
-    fn build(root: &'a Element) -> Self {
+    pub(super) fn build(root: &'a Element) -> Self {
         let mut templates = Templates {
             ln_types: HashMap::new(),
             do_types: HashMap::new(),
@@ -522,7 +522,7 @@ impl<'a> Templates<'a> {
 }
 
 /// The path of a child, with what names it: its `name`, or for a logical node its class and instance, or its `inst`.
-fn segment(path: &str, child: &Element) -> String {
+pub(super) fn segment(path: &str, child: &Element) -> String {
     let identity = child
         .attribute("name")
         .map(str::to_string)

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A synthetic configuration written for the tests of task S3. It is not an extract of the standard. -->
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B">
+  <Header id="SAMPLE-CID" version="1" revision="1" toolID="igs-test"/>
+  <Communication>
+    <SubNetwork name="SN1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.0.2.10</P>
+          <P type="IP-SUBNET">255.255.255.0</P>
+        </Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+  <IED name="IED1" type="SAMPLE" manufacturer="igs" configVersion="1">
+    <AccessPoint name="AP1">
+      <Services>
+        <GetDirectory/>
+        <GetDataObjectDefinition/>
+        <ReadWrite/>
+      </Services>
+      <Server>
+        <Authentication none="true"/>
+        <LDevice inst="LD1">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0T">
+            <DataSet name="DS1">
+              <FCDA ldInst="LD1" prefix="" lnClass="LLN0" lnInst="" doName="Mod" daName="stVal" fc="ST"/>
+              <FCDA ldInst="LD1" lnClass="GGIO" lnInst="1" doName="Ind1" daName="stVal" fc="ST"/>
+            </DataSet>
+          </LN0>
+          <LN lnClass="GGIO" inst="1" lnType="GGIOT"/>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+  <DataTypeTemplates>
+    <LNodeType id="LLN0T" lnClass="LLN0">
+      <DO name="Mod" type="ENC"/>
+      <DO name="Beh" type="ENS"/>
+      <DO name="Health" type="ENS"/>
+      <DO name="NamPlt" type="LPL"/>
+    </LNodeType>
+    <LNodeType id="GGIOT" lnClass="GGIO">
+      <DO name="Mod" type="ENC"/>
+      <DO name="Beh" type="ENS"/>
+      <DO name="Health" type="ENS"/>
+      <DO name="NamPlt" type="LPL"/>
+      <DO name="Ind1" type="SPS"/>
+    </LNodeType>
+    <DOType id="ENC" cdc="ENC">
+      <DA name="stVal" fc="ST" bType="Enum" type="ModKind"/>
+      <DA name="q" fc="ST" bType="Quality"/>
+      <DA name="t" fc="ST" bType="Timestamp"/>
+    </DOType>
+    <DOType id="ENS" cdc="ENS">
+      <DA name="stVal" fc="ST" bType="Enum" type="BehKind"/>
+      <DA name="q" fc="ST" bType="Quality"/>
+      <DA name="t" fc="ST" bType="Timestamp"/>
+    </DOType>
+    <DOType id="LPL" cdc="LPL">
+      <DA name="vendor" fc="DC" bType="VisString255"/>
+      <DA name="swRev" fc="DC" bType="VisString255"/>
+    </DOType>
+    <DOType id="SPS" cdc="SPS">
+      <DA name="stVal" fc="ST" bType="BOOLEAN"/>
+      <DA name="q" fc="ST" bType="Quality"/>
+      <DA name="t" fc="ST" bType="Timestamp"/>
+    </DOType>
+    <EnumType id="ModKind">
+      <EnumVal ord="0">on</EnumVal>
+      <EnumVal ord="1">blocked</EnumVal>
+      <EnumVal ord="2">test</EnumVal>
+      <EnumVal ord="3">off</EnumVal>
+    </EnumType>
+    <EnumType id="BehKind">
+      <EnumVal ord="1">on</EnumVal>
+      <EnumVal ord="5">off</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>

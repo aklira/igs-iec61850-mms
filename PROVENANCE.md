@@ -484,6 +484,36 @@ silent, to be confirmed by an observation test against other implementations.
   code, message and line; several findings all reported in line order; a diagnostic shown with its file, line, path and code;
   a malicious document type refused before the checks.
 
+### D-022 — The build of an IED from an SCL document: what it models, what it refuses, what it keeps (task S3; SCL-001, SCL-003, SCOPE-002)
+
+- **Decision**: `scl::build::build(document, file, ied, capabilities)` builds the model of one IED, named explicitly (SCL-001),
+  from a document that has passed `validate` (S2). Each logical node is a `LogicalNode` of its catalogue class; its data objects
+  are the DOs of its LNodeType, each with the DA and SDO names of its DOType (the model adds the mandatory ones). The data sets are
+  kept as declared (device, node, members); the address parameters of the connections of the IED are kept as (type, text). The
+  build is all or nothing: a `Configuration` only when no finding remains; otherwise every diagnostic, sorted by line.
+- **Refused, never dropped** (SCL-003): an instance value (a `Val` under a DAI or SDI: the value is not built by this release,
+  and ctlModel is among them, so this is a gap for K2, see below); a DOI that is not a DO of the LNodeType; a DAI or SDI that is not a
+  member of the DO's type; a member of a template that the catalogue class does not instantiate (checked against the built tree, so
+  that an optional member the model could not give is not lost silently); a model refusal (unknown or missing mandatory DO, unknown
+  attribute, duplicate name), with the model's own message.
+- **Capabilities** (SCOPE-002): the declared services of an access point (`Services`) and the declared blocks of a node are checked.
+  `Capabilities::current()` executes `GetDirectory`, `GetDataObjectDefinition` and `ReadWrite`. Any other declared service is refused
+  as not executed. The blocks (ReportControl, LogControl, GSEControl, SampledValueControl, SettingControl, Log, Inputs) are refused
+  whatever the capabilities say, because this release does not build them: a block accepted and then not built would be lost.
+- **Gaps, to close before the tasks that need them**: instance values (ctlModel for K2, the descriptions of D tasks); data sets are
+  not yet served (D1); the FCDA functional constraint and the attribute's constraint are not compared; the nested data attributes of
+  an optional SDO are checked against the built tree only through the template (not against the catalogue's own presence rules); the
+  ordering of sequence elements (already a gap of S2).
+- **Address parameters**: `Address/P` values are kept as text; they are not interpreted (no listening address is derived from them
+  in this release). `S1` now keeps the direct text of each element (`Element::text`), needed for these values.
+- **Test**: `tests/scl_build.rs` (9 tests: the sample builds its model, data sets and addresses; each refusal above with its code and
+  message; an unknown IED; several findings refuse the whole build). `igs-iec61850-mms/tests/scl_discovery.rs` (feature `scl`): the
+  sample configuration is served and discovered by the typed client (devices, nodes, functional groups, named variables).
+- **Sample**: `crates/igs-iec61850-mms-core/tests/data/sample.cid` is written for the tests (a device LD1, nodes LLN0 and GGIO1, one
+  data set, two address parameters). It is not an extract of the standard and not a field file.
+- **Confidence**: high for the refusals (tests) and the discovery of the sample; medium for the model mapping of real CIDs, which
+  have instance values and more nodes: to be confronted with the RTE field captures and SCD examples when the user provides them.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
