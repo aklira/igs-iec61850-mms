@@ -7,8 +7,9 @@ reference peer; the capture must decode cleanly in tshark.
 The IEC 61850 profile of the MMS crates comes with task N2. Until then the client runs with the
 settings closest to it: nesting level 6 (8-1 Tables 124 and 125) and the lenient parameter CBBs of the
 MMS project (its gap G8). The listing of the variables of a logical device is expected to fail while
-identifiers are capped at 32 characters (MMS-001, task N1): the test is a strict expected failure, so
-that it reports when N1 lands.
+the client runs the ISO 9506 string limits: since N1 the codec reads identifiers of up to 64 characters,
+and the IEC 61850 profile of N2 allows them. The test is a strict expected failure, so that it reports
+when N2 lands.
 """
 
 from __future__ import annotations
@@ -78,7 +79,7 @@ def test_mms_client_identifies_and_lists_the_logical_devices(bench, client):
     assert len(tshark.find(frames, src=SERVER, info="confirmed-ResponsePDU")) >= 2
 
 
-@pytest.mark.xfail(strict=True, reason="identifiers longer than 32 characters until task N1 (MMS-001)")
+@pytest.mark.xfail(strict=True, reason="ISO 9506 limit of 32 characters until the IEC 61850 profile (N2)")
 def test_mms_client_lists_the_variables_of_a_logical_device(bench, client):
     bench.up("ref-server", "capture")
     capture.wait_live(bench)
