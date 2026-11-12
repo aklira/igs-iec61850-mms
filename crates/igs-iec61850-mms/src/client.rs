@@ -21,9 +21,9 @@ use igs_iso9506_mms::vmd::conforms;
 use igs_iso9506_mms::{Client, ClientConfig, Error as MmsError, Events};
 use igs_iso9506_mms_codec::generated::types::{
     AccessResult, Data, DataAccessError, GetNameListRequest, GetNameListRequestObjectScope,
-    GetVariableAccessAttributesRequest, Identifier, ObjectClass, ObjectClassBasicObjectClass,
-    ObjectName, ObjectNameDomainSpecific, ReadRequest, TypeDescription,
-    VariableAccessSpecification, VariableAccessSpecificationListOfVariableItem,
+    GetNamedVariableListAttributesRequest, GetVariableAccessAttributesRequest, Identifier,
+    ObjectClass, ObjectClassBasicObjectClass, ObjectName, ObjectNameDomainSpecific, ReadRequest,
+    TypeDescription, VariableAccessSpecification, VariableAccessSpecificationListOfVariableItem,
     VariableSpecification, WriteRequest, WriteResponseItemItem,
 };
 
@@ -203,6 +203,68 @@ impl IecClient {
         Ok(DataDefinition { ty, definition })
     }
 
+    /// The data sets of a logical device: the named variable lists of its domain, in the order of the server.
+    pub async fn data_sets(&self, device: &str) -> Result<Vec<String>, ClientError> {
+        let device = Name::new(device)?;
+        self.list(
+            ObjectClassBasicObjectClass::NAMED_VARIABLE_LIST,
+            GetNameListRequestObjectScope::DomainSpecific(Identifier(device.as_str().to_string())),
+        )
+        .await
+    }
+
+    /// The members of a data set, in their order: the (device, variable) pairs that the list selects
+    /// (GetDataSetDirectory, ISO 9506-2 §14.14).
+    pub async fn data_set_members(
+        &self,
+        device: &str,
+        set: &str,
+    ) -> Result<Vec<(String, String)>, ClientError> {
+        let response = self
+            .client
+            .get_named_variable_list_attributes(GetNamedVariableListAttributesRequest(data_set(
+                device, set,
+            )?))
+            .await
+            .map_err(ClientError::Mms)?;
+        response
+            .list_of_variable
+            .into_iter()
+            .map(|item| match item.variable_specification {
+                VariableSpecification::Name(ObjectName::DomainSpecific(member)) => {
+                    Ok((member.domain_id.0, member.item_id.0))
+                }
+                _ => Err(ClientError::Response(
+                    "a data set member is not a domain-specific name",
+                )),
+            })
+            .collect()
+    }
+
+    /// Reads a data set in one request: the value or the error of each member, in the order of the members
+    /// (GetDataSetValues, ISO 9506-2 §14.11).
+    pub async fn read_data_set(
+        &self,
+        device: &str,
+        set: &str,
+    ) -> Result<Vec<Result<Data, ItemError>>, ClientError> {
+        let request = ReadRequest {
+            specification_with_result: None,
+            variable_access_specification: VariableAccessSpecification::VariableListName(data_set(
+                device, set,
+            )?),
+        };
+        let response = self.client.read(request).await.map_err(ClientError::Mms)?;
+        Ok(response
+            .list_of_access_result
+            .into_iter()
+            .map(|result| match result {
+                AccessResult::Success(data) => Ok(data),
+                AccessResult::Failure(error) => Err(ItemError::from_read(&error)),
+            })
+            .collect())
+    }
+
     /// Reads the items, in one request. Each result is the value or the error of its item, in the order of the items.
     pub async fn read(
         &self,
@@ -346,4 +408,14 @@ fn specification(items: &[MmsName]) -> VariableAccessSpecification {
             })
             .collect(),
     )
+}
+
+/// The MMS name of a data set of a logical device: a domain-specific name, in the device's domain.
+fn data_set(device: &str, set: &str) -> Result<ObjectName, ClientError> {
+    let device = Name::new(device)?;
+    let set = Name::new(set)?;
+    Ok(ObjectName::DomainSpecific(ObjectNameDomainSpecific {
+        domain_id: Identifier(device.as_str().to_string()),
+        item_id: Identifier(set.as_str().to_string()),
+    }))
 }

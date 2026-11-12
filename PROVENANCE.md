@@ -514,6 +514,30 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the refusals (tests) and the discovery of the sample; medium for the model mapping of real CIDs, which
   have instance values and more nodes: to be confronted with the RTE field captures and SCD examples when the user provides them.
 
+### D-023 — The static data sets: their members, their lifecycle and their writes (task D1; DS-001, DS-002, AT-08)
+
+- **Decision**: each data set of a configuration is a named variable list of its device's domain (`ServedModel::from_configuration`).
+  Its members are the variables that the FCDA selects, in document order and, for a member without a data attribute, in the model's
+  order. A member with a data attribute selects that variable (a structure is one variable); a member without one selects the leaves
+  under its data object and functional constraint, not the structures that contain them (8-1 §14: the data of the object under the
+  constraint). A member that selects no variable of the model refuses the configuration (SCL-003), so it is caught at build time
+  (`resolve_data_sets`); a member whose functional constraint does not match its attribute is refused the same way.
+- **Lifecycle** (DS-002): a static list is not deleted by a client. A delete request that would match one (by name, in its domain, or
+  in the VMD scope) is refused whole, with access denied, and deletes nothing: no partial deletion. A definition under the name of a
+  static list is refused by the VMD (object exists). Static lists are not association-specific: a disconnection leaves them as they are.
+- **Reads and writes**: GetDataSetValues is a Read with the list; SetDataSetValues is a Write with the list. Each member keeps the
+  access rules of its variable (the read-only guard of A4): a write to a status member fails that item, and the other items are
+  written. The request as a whole is not atomic, as the MMS Write is not; each item is written or refused as a whole.
+- **Not in D1**: dynamic data sets (DS-001 by M2: they are defined by a client and belong to the association), data sets referenced
+  by enabled service objects (none exists before the reports, D2 and the buffered reports), and writable members in the sample
+  (the sample has none, so the positive write is not tested here: to add with a configuration that has a setpoint member).
+- **Test**: `igs-iec61850-mms/tests/data_sets.rs` (feature `scl`, 5 tests: the list is discovered, the members keep their order, the
+  values are read in that order, a static list is not deleted by a specific or a domain request, and a write to read-only members fails
+  item by item); `igs-iec61850-mms-core/tests/scl_build.rs` (the resolution of members: order, the leaves of a data object, a member
+  selecting nothing).
+- **Confidence**: high for the expansion and the lifecycle (tests); medium for the choice of refusing a delete request whole rather than
+  deleting its unprotected lists (a client sees one answer; it is the conservative reading of DS-002).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

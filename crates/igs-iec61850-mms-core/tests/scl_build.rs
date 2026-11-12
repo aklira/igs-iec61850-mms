@@ -183,3 +183,52 @@ fn several_findings_refuse_the_whole_configuration() {
     let lines: Vec<u32> = diagnostics.iter().map(|d| d.line).collect();
     assert!(lines.windows(2).all(|pair| pair[0] <= pair[1]), "{lines:?}");
 }
+
+#[test]
+fn a_data_set_selects_the_variables_of_its_members_in_order() {
+    let configuration = build_text(SAMPLE).expect("the sample builds");
+    let variables: Vec<(&str, &str)> = configuration.data_sets[0]
+        .variables
+        .iter()
+        .map(|v| (v.device.as_str(), v.name.as_str()))
+        .collect();
+    assert_eq!(
+        variables,
+        [("LD1", "LLN0$ST$Mod$stVal"), ("LD1", "GGIO1$ST$Ind1$stVal")]
+    );
+}
+
+#[test]
+fn a_member_without_a_data_attribute_selects_every_attribute_of_its_data_object_under_its_constraint(
+) {
+    let text = mutate(
+        "doName=\"Ind1\" daName=\"stVal\" fc=\"ST\"",
+        "doName=\"Ind1\" fc=\"ST\"",
+    );
+    let configuration = build_text(&text).expect("the document builds");
+    let names: Vec<&str> = configuration.data_sets[0]
+        .variables
+        .iter()
+        .filter(|v| v.name.starts_with("GGIO1$"))
+        .map(|v| v.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        ["GGIO1$ST$Ind1$stVal", "GGIO1$ST$Ind1$q", "GGIO1$ST$Ind1$t"]
+    );
+}
+
+#[test]
+fn a_member_that_selects_no_variable_of_the_model_refuses_the_configuration() {
+    // The template has stVal, but under ST only: a member asking for it under MX passes the validation (the constraint is
+    // not compared there) and selects no variable of the model.
+    let text = mutate(
+        "doName=\"Ind1\" daName=\"stVal\" fc=\"ST\"",
+        "doName=\"Ind1\" daName=\"stVal\" fc=\"MX\"",
+    );
+    refused_with(
+        build_text(&text),
+        "SCL-003",
+        "selects no variable of the model",
+    );
+}

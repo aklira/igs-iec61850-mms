@@ -13,8 +13,9 @@
 //! The document must have passed [`validate`](super::validate::validate) first: the references are then known to
 //! resolve, and the build reports only what the validation does not cover.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
+use crate::model::layout::{layout, IDENTIFIER_LIMIT};
 use crate::model::{DataObjectSpec, LogicalDevice, LogicalNode, Node, ServerModel};
 
 use super::validate::{segment, Diagnostic, Templates};
@@ -78,7 +79,19 @@ pub struct Member {
     pub data_attribute: Option<String>,
 }
 
-/// A data set of the IED: the logical node that holds it, its name, and its members in order.
+/// A variable of the model that a data set holds: its logical device, and its name within that device (the flattened
+/// name of the served model, `LN$FC$DO$DA`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariableRef {
+    /// The logical device (the domain of the variable).
+    pub device: String,
+    /// The name of the variable within the device.
+    pub name: String,
+}
+
+/// A data set of the IED: the logical node that holds it, its name, its members in document order, and the variables
+/// they select, in the same order (a member without a data attribute selects every attribute of its data object under
+/// its functional constraint, in the order of the model).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataSet {
     /// The logical device of the data set.
@@ -89,6 +102,15 @@ pub struct DataSet {
     pub name: String,
     /// The members, in document order.
     pub members: Vec<Member>,
+    /// The variables that the members select, in order.
+    pub variables: Vec<VariableRef>,
+}
+
+/// A data set as read, before its members are resolved against the model: with the location of its element.
+struct Pending {
+    set: DataSet,
+    path: String,
+    line: u32,
 }
 
 /// The configuration of one IED: its model, its data sets, and its address parameters.
@@ -117,6 +139,7 @@ pub fn build(
         file,
         capabilities,
         diagnostics: Vec::new(),
+        pending: Vec::new(),
     };
     let Some(ied_element) = root
         .children
@@ -135,7 +158,6 @@ pub fn build(
     let ied_path = segment("SCL", ied_element);
 
     let mut model = ServerModel::new();
-    let mut data_sets = Vec::new();
     for access_point in ied_element
         .children
         .iter()
@@ -163,8 +185,7 @@ pub fn build(
                     .filter(|child| child.name == "LN0" || child.name == "LN")
                 {
                     let node_path = segment(&device_path, node);
-                    if let Some(logical) =
-                        builder.logical_node(node, &node_path, inst, &templates, &mut data_sets)
+                    if let Some(logical) = builder.logical_node(node, &node_path, inst, &templates)
                     {
                         nodes.push(logical);
                     }
@@ -191,6 +212,7 @@ pub fn build(
         }
     }
     let addresses = builder.addresses(root, ied);
+    let data_sets = builder.resolve_data_sets(&model);
     builder.finish()?;
     Ok(Configuration {
         ied: ied.to_string(),
@@ -204,6 +226,7 @@ struct Builder<'a> {
     file: &'a str,
     capabilities: &'a Capabilities,
     diagnostics: Vec<Diagnostic>,
+    pending: Vec<Pending>,
 }
 
 impl Builder<'_> {
@@ -228,6 +251,55 @@ impl Builder<'_> {
         self.diagnostics
             .sort_by(|a, b| (a.line, a.code, &a.path).cmp(&(b.line, b.code, &b.path)));
         self.diagnostics
+    }
+
+    /// Resolves every data set against the model: each member selects the variables of its data object (and its data
+    /// attribute) under its functional constraint, in the order of the model. A member that selects none is refused
+    /// (SCL-003), and the data sets are returned only when every member resolves.
+    fn resolve_data_sets(&mut self, model: &ServerModel) -> Vec<DataSet> {
+        let mut names: HashMap<(String, String), Vec<String>> = HashMap::new();
+        for device in model.devices() {
+            for node in device.nodes() {
+                if let Ok(node_layout) = layout(node, IDENTIFIER_LIMIT) {
+                    let variables = node_layout.variables.into_iter().map(|v| v.name).collect();
+                    names.insert(
+                        (device.name().to_string(), node.name().to_string()),
+                        variables,
+                    );
+                }
+            }
+        }
+        let mut resolved = Vec::new();
+        for pending in std::mem::take(&mut self.pending) {
+            let mut set = pending.set;
+            let mut variables = Vec::new();
+            for member in &set.members {
+                let prefix = member_prefix(member);
+                let found: Vec<String> = names
+                    .get(&(member.device.clone(), member.node.clone()))
+                    .map(|candidates| select(candidates, &prefix, member.data_attribute.is_some()))
+                    .unwrap_or_default();
+                if found.is_empty() {
+                    self.diagnostics.push(Diagnostic {
+                        code: "SCL-003",
+                        file: self.file.to_string(),
+                        path: pending.path.clone(),
+                        line: pending.line,
+                        message: format!(
+                            "the member {}/{prefix} of the data set {} selects no variable of the model",
+                            member.device, set.name
+                        ),
+                    });
+                }
+                variables.extend(found.into_iter().map(|name| VariableRef {
+                    device: member.device.clone(),
+                    name,
+                }));
+            }
+            set.variables = variables;
+            resolved.push(set);
+        }
+        resolved
     }
 
     /// SCOPE-002: a service declared under an access point, which the server does not execute.
@@ -309,7 +381,6 @@ impl Builder<'_> {
         path: &str,
         device_inst: &str,
         templates: &Templates<'_>,
-        data_sets: &mut Vec<DataSet>,
     ) -> Option<LogicalNode> {
         let prefix = node.attribute("prefix").unwrap_or_default();
         let class = node.attribute("lnClass").unwrap_or_default();
@@ -360,7 +431,7 @@ impl Builder<'_> {
             }
         };
         self.members(ln_type, &logical, path, templates);
-        self.data_sets(node, path, device_inst, &name, data_sets);
+        self.data_sets(node, path, device_inst, &name);
         self.declared_blocks(node, path);
         Some(logical)
     }
@@ -499,14 +570,7 @@ impl Builder<'_> {
     }
 
     /// The data sets of a node: each member names a logical device, a node, and a data object (and an attribute).
-    fn data_sets(
-        &mut self,
-        node: &Element,
-        path: &str,
-        device_inst: &str,
-        node_name: &str,
-        data_sets: &mut Vec<DataSet>,
-    ) {
+    fn data_sets(&mut self, node: &Element, path: &str, device_inst: &str, node_name: &str) {
         let mut names = BTreeSet::new();
         for data_set in node.children.iter().filter(|child| child.name == "DataSet") {
             let set_path = segment(path, data_set);
@@ -537,11 +601,16 @@ impl Builder<'_> {
                     data_attribute: fcda.attribute("daName").map(str::to_string),
                 })
                 .collect();
-            data_sets.push(DataSet {
-                device: device_inst.to_string(),
-                node: node_name.to_string(),
-                name: name.to_string(),
-                members,
+            self.pending.push(Pending {
+                set: DataSet {
+                    device: device_inst.to_string(),
+                    node: node_name.to_string(),
+                    name: name.to_string(),
+                    members,
+                    variables: Vec::new(),
+                },
+                path: set_path.clone(),
+                line: data_set.line,
             });
         }
     }
@@ -573,6 +642,47 @@ impl Builder<'_> {
             );
         }
     }
+}
+
+/// The variables a member selects among the variables of its node. With a data attribute, the variable of that
+/// attribute (a structure is one variable). Without one, the leaves below the data object, under its functional
+/// constraint: the structures that contain other selected variables are not listed on their own (8-1, FCDA).
+fn select(candidates: &[String], prefix: &str, has_attribute: bool) -> Vec<String> {
+    if has_attribute {
+        return candidates
+            .iter()
+            .filter(|name| name.as_str() == prefix)
+            .cloned()
+            .collect();
+    }
+    let below = format!("{prefix}$");
+    let under: Vec<&String> = candidates
+        .iter()
+        .filter(|name| name.starts_with(&below))
+        .collect();
+    under
+        .iter()
+        .filter(|name| {
+            !under
+                .iter()
+                .any(|other| other.len() > name.len() && other.starts_with(&format!("{name}$")))
+        })
+        .map(|name| (*name).clone())
+        .collect()
+}
+
+/// The name of the variables a member selects: the logical node, the functional constraint, the data object, and the
+/// data attribute (dotted in the SCL, with `$` in the model).
+fn member_prefix(member: &Member) -> String {
+    let mut name = format!(
+        "{}${}${}",
+        member.node, member.functional_constraint, member.data_object
+    );
+    if let Some(attribute) = &member.data_attribute {
+        name.push('$');
+        name.push_str(&attribute.replace('.', "$"));
+    }
+    name
 }
 
 /// Whether an instance element carries a value: a `Val` below it.

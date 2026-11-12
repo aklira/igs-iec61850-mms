@@ -542,7 +542,7 @@ The agent does not wait for these; it records the impact and continues with what
 | S1 Parser and bounds | [x] |
 | S2 Semantic checks and templates | [x] |
 | S3 Model and communication parameters from SCL | [x] |
-| D1 Static datasets | [ ] |
+| D1 Static datasets | [x] |
 | D2 Dynamic datasets | [ ] |
 | D3 URCB state machine | [ ] |
 | D4 Report encoding and delivery | [ ] |

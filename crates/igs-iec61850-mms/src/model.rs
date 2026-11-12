@@ -9,7 +9,7 @@
 //! views of it, by path, so that a name and the node always show the same value. The variables are read-only until
 //! the write guard of the data access (task A4, MODEL-005) decides which attributes accept a write.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
@@ -24,8 +24,9 @@ use igs_iso9506_mms::server::{Model, Peer};
 use igs_iso9506_mms::vmd::{Error as VmdError, Identity, NameError, Target, Variable, Vmd};
 use igs_iso9506_mms::ServerConfig;
 use igs_iso9506_mms_codec::generated::types::{
-    ConfirmedServiceRequest, ConfirmedServiceResponse, Data, DataAccessError, ServiceError,
-    TypeDescription,
+    ConfirmedServiceRequest, ConfirmedServiceResponse, Data, DataAccessError,
+    DeleteNamedVariableListRequest, DeleteNamedVariableListRequestScopeOfDelete, ObjectName,
+    ServiceError, ServiceErrorErrorClass, ServiceErrorErrorClassAccess, TypeDescription,
 };
 use igs_iso9506_mms_codec::mms::profile::{Model as AcsiModel, Profile};
 use igs_iso9506_mms_link::config::LinkConfig;
@@ -221,6 +222,8 @@ pub fn serve(server: &ServerModel, identity: Identity) -> Result<Served, ServeEr
 pub struct ServedModel {
     vmd: Vmd,
     updater: Updater,
+    /// The static data sets, as (device, name): the named variable lists of the configuration, which no client deletes.
+    static_lists: BTreeSet<(String, String)>,
 }
 
 impl ServedModel {
@@ -230,7 +233,67 @@ impl ServedModel {
         Ok(Self {
             vmd: served.vmd,
             updater: served.updater,
+            static_lists: BTreeSet::new(),
         })
+    }
+
+    /// The served model of a configuration built from SCL (task S3): its model, and its data sets as static named
+    /// variable lists in their logical devices, in the order of their members (task D1, AT-08). A client reads and
+    /// writes them through the lists; it cannot delete them (DS-002), and it cannot define a list of the same name.
+    #[cfg(feature = "scl")]
+    pub fn from_configuration(
+        configuration: &igs_iec61850_mms_core::scl::build::Configuration,
+        identity: Identity,
+    ) -> Result<Self, ServeError> {
+        let Served { mut vmd, updater } = serve(&configuration.model, identity)?;
+        let mut static_lists = BTreeSet::new();
+        for set in &configuration.data_sets {
+            let domain = vmd.name(&set.device)?;
+            let list = vmd.name(&set.name)?;
+            let mut members = Vec::with_capacity(set.variables.len());
+            for variable in &set.variables {
+                let device = vmd.name(&variable.device)?;
+                let item = vmd.name(&variable.name)?;
+                members.push(Target::in_domain(device, item));
+            }
+            vmd.define_list(&Target::in_domain(domain, list), members)?;
+            static_lists.insert((set.device.clone(), set.name.clone()));
+        }
+        Ok(Self {
+            vmd,
+            updater,
+            static_lists,
+        })
+    }
+
+    /// Whether a delete request would delete a static list. Such a request is refused whole: it deletes nothing.
+    fn deletes_static(&self, request: &DeleteNamedVariableListRequest) -> bool {
+        let scope = request.scope_of_delete.as_ref().map_or(
+            DeleteNamedVariableListRequestScopeOfDelete::SPECIFIC.0,
+            |scope| scope.0,
+        );
+        if scope == DeleteNamedVariableListRequestScopeOfDelete::SPECIFIC.0 {
+            request
+                .list_of_variable_list_name
+                .iter()
+                .flatten()
+                .any(|object| match object {
+                    ObjectName::DomainSpecific(object) => self
+                        .static_lists
+                        .contains(&(object.domain_id.0.clone(), object.item_id.0.clone())),
+                    _ => false,
+                })
+        } else if scope == DeleteNamedVariableListRequestScopeOfDelete::DOMAIN.0 {
+            request.domain_name.as_ref().is_some_and(|domain| {
+                self.static_lists
+                    .iter()
+                    .any(|(device, _)| *device == domain.0)
+            })
+        } else if scope == DeleteNamedVariableListRequestScopeOfDelete::VMD.0 {
+            !self.static_lists.is_empty()
+        } else {
+            false
+        }
     }
 
     /// The VMD that answers the services.
@@ -250,6 +313,18 @@ impl Model for ServedModel {
         peer: &Peer,
         service: ConfirmedServiceRequest,
     ) -> Result<ConfirmedServiceResponse, ServiceError> {
+        if let ConfirmedServiceRequest::DeleteNamedVariableList(request) = &service {
+            if self.deletes_static(request) {
+                return Err(ServiceError {
+                    error_class: ServiceErrorErrorClass::Access(
+                        ServiceErrorErrorClassAccess::OBJECT_ACCESS_DENIED,
+                    ),
+                    additional_code: None,
+                    additional_description: None,
+                    service_specific_info: None,
+                });
+            }
+        }
         <Vmd as Model>::dispatch(&mut self.vmd, peer, service)
     }
 }
