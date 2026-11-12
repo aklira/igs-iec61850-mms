@@ -25,3 +25,12 @@ rustc-ice-*.txt
 
 # Custom
 SPECIFICATIONS.md
+.claude/
+AGENTS.md
+# Text of the licensed standards and IEC code components: in the private norm_preparation repository only
+docs/spec
+*.asn
+*.nsd
+*.snsd
+*.AppNS
+SCL*.xsd

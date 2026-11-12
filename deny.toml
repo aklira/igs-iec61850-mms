@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 The igs-iec61850-mms contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Rule 9 of IMPLEMENTATION.md: MIT, Apache-2.0, BSD or ISC only. An exception is recorded in PROVENANCE.md.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+]
+
+[bans]
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

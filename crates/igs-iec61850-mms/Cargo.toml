@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 The igs-iec61850-mms contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "igs-iec61850-mms"
+version = "0.1.0"
+description = "IEC 61850 client and server over MMS: async API on the MMS crates of igs-iso9506-mms."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+igs-iec61850-mms-core = { path = "../igs-iec61850-mms-core", version = "0.1.0" }

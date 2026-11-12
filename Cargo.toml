@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 The igs-iec61850-mms contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[workspace]
+resolver = "3"
+members = [
+    "crates/igs-iec61850-mms-core",
+    "crates/igs-iec61850-mms",
+    "xtask",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/aklira/igs-iec61850-mms"
+
+# Rule 8 of IMPLEMENTATION.md. Inherited by the two library crates, not by xtask.
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"

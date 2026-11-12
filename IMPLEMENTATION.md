@@ -516,7 +516,7 @@ The agent does not wait for these; it records the impact and continues with what
 | P5 IEC code components | [x] |
 | P6 MMS modules with the 8-1 extensions | [x] |
 | P7 TISSUE selection | [x] |
-| F1 Workspace skeleton | [ ] |
+| F1 Workspace skeleton | [x] |
 | F2 Continuous integration and ai-log | [ ] |
 | F3 Catalogue generation | [ ] |
 | F4 Interop bench skeleton | [ ] |

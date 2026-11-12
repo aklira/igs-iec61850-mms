@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 The igs-iec61850-mms contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[alias]
+xtask = "run --quiet --package xtask --"
