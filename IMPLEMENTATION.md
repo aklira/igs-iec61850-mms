@@ -517,7 +517,7 @@ The agent does not wait for these; it records the impact and continues with what
 | P6 MMS modules with the 8-1 extensions | [x] |
 | P7 TISSUE selection | [x] |
 | F1 Workspace skeleton | [x] |
-| F2 Continuous integration and ai-log | [ ] |
+| F2 Continuous integration and ai-log | [x] |
 | F3 Catalogue generation | [ ] |
 | F4 Interop bench skeleton | [ ] |
 | N1 Generator input and codec union | [ ] |
