@@ -189,10 +189,10 @@ async fn a_static_data_set_cannot_be_defined_again_and_a_member_that_is_not_serv
     let client = setup.clients.into_iter().next().expect("a client");
     assert!(
         client
-            .define_data_set("LD1", "DS1", &status())
+            .define_data_set("LD1", "LLN0$DS1", &status())
             .await
             .is_err(),
-        "the static DS1 exists"
+        "the static LLN0$DS1 exists"
     );
     assert!(
         client

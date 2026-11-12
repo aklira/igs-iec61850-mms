@@ -177,7 +177,7 @@ async fn a_configured_block_reports_the_change_to_its_owner_in_the_layout_of_the
     configure(
         &client,
         "RPT1",
-        "DS1",
+        "LLN0$DS1",
         TriggerOptions {
             data_change: true,
             quality_change: true,
@@ -195,7 +195,7 @@ async fn a_configured_block_reports_the_change_to_its_owner_in_the_layout_of_the
         .await
         .expect("the report");
     assert_eq!(report.rpt_id, "RPT1");
-    assert_eq!(report.data_set.as_deref(), Some("DS1"));
+    assert_eq!(report.data_set.as_deref(), Some("LLN0$DS1"));
     assert_eq!(report.sequence, Some(0), "the first report of an enabling");
     assert_eq!(report.conf_rev, Some(1));
     assert_eq!(report.entries.len(), 1);
@@ -215,8 +215,8 @@ async fn two_clients_with_distinct_subscriptions_receive_only_their_own_reports(
     let mut setup = start(2).await;
     let (first, mut first_events) = setup.clients.remove(0);
     let (second, mut second_events) = setup.clients.remove(0);
-    configure(&first, "RPT1", "DS1", data_change(), 0).await;
-    configure(&second, "RPT2", "DS1", data_change(), 0).await;
+    configure(&first, "RPT1", "LLN0$DS1", data_change(), 0).await;
+    configure(&second, "RPT2", "LLN0$DS1", data_change(), 0).await;
     setup
         .updater
         .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
@@ -242,7 +242,7 @@ async fn two_clients_with_distinct_subscriptions_receive_only_their_own_reports(
 async fn a_disabled_block_reports_nothing_and_its_values_are_read() {
     let mut setup = start(1).await;
     let (client, mut events) = setup.clients.remove(0);
-    configure(&client, "RPT1", "DS1", data_change(), 0).await;
+    configure(&client, "RPT1", "LLN0$DS1", data_change(), 0).await;
     client
         .urcb_write("LD1", "LLN0", "RPT1", UrcbWrite::Enable(false))
         .await
@@ -265,7 +265,7 @@ async fn a_disabled_block_reports_nothing_and_its_values_are_read() {
         values.reserved,
         "the reservation stays with the client that holds it"
     );
-    assert_eq!(values.data_set.as_deref(), Some("DS1"));
+    assert_eq!(values.data_set.as_deref(), Some("LLN0$DS1"));
     assert!(values.triggers.data_change && !values.triggers.quality_change);
     client.close().await.expect("closed");
     setup.server.shutdown().await;
@@ -278,7 +278,7 @@ async fn a_general_interrogation_reports_every_member_with_its_reason() {
     configure(
         &client,
         "RPT1",
-        "DS1",
+        "LLN0$DS1",
         TriggerOptions {
             general_interrogation: true,
             ..Default::default()
@@ -308,7 +308,7 @@ async fn the_integrity_period_repeats_a_report_of_every_member() {
     configure(
         &client,
         "RPT1",
-        "DS1",
+        "LLN0$DS1",
         TriggerOptions {
             integrity: true,
             ..Default::default()
@@ -345,7 +345,7 @@ async fn a_quality_trigger_alone_does_not_report_a_data_change() {
     configure(
         &client,
         "RPT3",
-        "DS2",
+        "LLN0$DS2",
         TriggerOptions {
             quality_change: true,
             ..Default::default()
@@ -396,7 +396,7 @@ async fn a_write_by_a_client_that_does_not_hold_the_block_is_refused() {
             "LD1",
             "LLN0",
             "RPT1",
-            UrcbWrite::DataSet(Some("DS1".to_string()))
+            UrcbWrite::DataSet(Some("LLN0$DS1".to_string()))
         )
         .await
         .expect("answered")

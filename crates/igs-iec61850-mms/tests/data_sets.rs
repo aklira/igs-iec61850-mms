@@ -67,7 +67,7 @@ async fn start() -> (Server, Client, Updater) {
 fn ds1() -> ObjectName {
     ObjectName::DomainSpecific(ObjectNameDomainSpecific {
         domain_id: Identifier("LD1".to_string()),
-        item_id: Identifier("DS1".to_string()),
+        item_id: Identifier("LLN0$DS1".to_string()),
     })
 }
 
@@ -75,7 +75,10 @@ fn ds1() -> ObjectName {
 async fn the_data_sets_of_the_device_are_listed() {
     let (server, client, _updater) = start().await;
     let client = IecClient::new(client);
-    assert_eq!(client.data_sets("LD1").await.unwrap(), ["DS1".to_string()]);
+    assert_eq!(
+        client.data_sets("LD1").await.unwrap(),
+        ["LLN0$DS1".to_string()]
+    );
     client.close().await.unwrap();
     server.shutdown().await;
 }
@@ -84,7 +87,7 @@ async fn the_data_sets_of_the_device_are_listed() {
 async fn the_members_keep_their_document_order() {
     let (server, client, _updater) = start().await;
     let client = IecClient::new(client);
-    let members = client.data_set_members("LD1", "DS1").await.unwrap();
+    let members = client.data_set_members("LD1", "LLN0$DS1").await.unwrap();
     assert_eq!(
         members,
         [
@@ -103,7 +106,7 @@ async fn the_data_set_reads_its_values_in_the_order_of_its_members() {
         .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
         .expect("the value is updated");
     let client = IecClient::new(client);
-    let values = client.read_data_set("LD1", "DS1").await.unwrap();
+    let values = client.read_data_set("LD1", "LLN0$DS1").await.unwrap();
     assert_eq!(values.len(), 2);
     assert!(matches!(values[1], Ok(Data::Boolean(true))), "{values:?}");
     client.close().await.unwrap();
@@ -126,7 +129,10 @@ async fn a_static_data_set_is_not_deleted_by_a_client() {
     };
     assert!(client.delete_named_variable_list(domain).await.is_err());
     let client = IecClient::new(client);
-    assert_eq!(client.data_sets("LD1").await.unwrap(), ["DS1".to_string()]);
+    assert_eq!(
+        client.data_sets("LD1").await.unwrap(),
+        ["LLN0$DS1".to_string()]
+    );
     client.close().await.unwrap();
     server.shutdown().await;
 }

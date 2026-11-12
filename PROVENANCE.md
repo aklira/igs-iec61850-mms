@@ -921,6 +921,22 @@ silent, to be confirmed by an observation test against other implementations.
   licensed text's free paraphrase of what the library does.
 - **Confidence**: high on the PIXIT values (read from the code); medium on the ACSI and MMS lists, which restate the rows and the dispatch.
 
+### D-040 — The reverse reports: the names of the data sets, the block as a structure, and the object reference of DatSet (task D6, reverse)
+
+- **Data set names**: a data set declared in a logical node is named in MMS `LN$name` (`LLN0$Events`), as 8-1 has it, and the `DatSet` attribute of a
+  block is the same name. The SCL build qualifies the names with the node. Before, the names were the bare SCL names (`Events`), which the reference
+  client refused with `object-non-existent`. The change touches the SCL build, the tests that name data sets through the SCL, and the client's data set
+  identifier (`$` is allowed in an identifier, not in a device name).
+- **The block as a structure**: a read of `node$RP$name` (or `node$BR$name`) returns the attributes as one structure, in the order of the block's table
+  (8-1 table 73 for the unbuffered block, 7-2 table 70 for the buffered one). The reference client reads the block this way (`getRCBValues`).
+- **`DatSet` as an object reference**: the server answers `device/LN$name` (the peer's form), and accepts a write of either that form (the device of the
+  block) or the bare name. The client writes the reference form, which the peer requires (`ParameterValueInconsistent` otherwise); the client's readers
+  take the bare name back.
+- **Evidence**: the reverse row of `docs/interop.md` (matrix C3): 22 reports of our server in the capture of the reference client, with no service error.
+  Each finding above was a failure of the reference client's run, read from the capture (`tshark` on the pinned image), not inferred.
+- **Confidence**: high on the names and the structure (the reference client runs with them); medium on the order of the structure's components, which
+  the reference client does not complain about but which is not checked against its decoder (it uses the positions of its own type).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

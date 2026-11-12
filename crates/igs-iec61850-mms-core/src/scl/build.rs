@@ -709,7 +709,8 @@ impl Builder<'_> {
                 set: DataSet {
                     device: device_inst.to_string(),
                     node: node_name.to_string(),
-                    name: name.to_string(),
+                    // The name of the data set in MMS is `LN$name` (8-1 §8.1.2; `LLN0$Events`), and so is the DatSet attribute.
+                    name: format!("{node_name}${name}"),
                     members,
                     variables: Vec::new(),
                 },
@@ -745,7 +746,7 @@ impl Builder<'_> {
                     device: device_inst.to_string(),
                     node: node_name.to_string(),
                     name: name.to_string(),
-                    config: buffered_config(node, block),
+                    config: buffered_config(node, block, node_name),
                 });
                 continue;
             }
@@ -757,7 +758,7 @@ impl Builder<'_> {
                     device: device_inst.to_string(),
                     node: node_name.to_string(),
                     name: name.to_string(),
-                    config: report_config(node, block),
+                    config: report_config(node, block, node_name),
                 });
                 continue;
             }
@@ -776,7 +777,7 @@ impl Builder<'_> {
 }
 
 /// The configuration of an unbuffered report control block, from its element and the data sets of its node.
-fn report_config(node: &Element, block: &Element) -> Config {
+fn report_config(node: &Element, block: &Element, node_name: &str) -> Config {
     let data_sets = node
         .children
         .iter()
@@ -784,14 +785,16 @@ fn report_config(node: &Element, block: &Element) -> Config {
         .filter_map(|set| {
             let members = set.children.iter().filter(|c| c.name == "FCDA").count();
             set.attribute("name")
-                .map(|name| (name.to_string(), members))
+                .map(|name| (format!("{node_name}${name}"), members))
         })
         .collect();
     let options = block.children.iter().find(|c| c.name == "OptFields");
     let triggers = block.children.iter().find(|c| c.name == "TrgOps");
     Config {
         rpt_id: block.attribute("rptID").unwrap_or_default().to_string(),
-        data_set: block.attribute("datSet").map(str::to_string),
+        data_set: block
+            .attribute("datSet")
+            .map(|name| format!("{node_name}${name}")),
         data_sets,
         opt_flds: OptionalFields {
             seq_num: flag(options, "seqNum"),
@@ -819,8 +822,8 @@ fn report_config(node: &Element, block: &Element) -> Config {
 
 /// The configuration of a buffered report control block: the unbuffered one, with the options of the buffered block (`bufOvfl`,
 /// `entryID`). The segmentation is not in the SCL: the server segments when it must, and the client sets the option.
-fn buffered_config(node: &Element, block: &Element) -> brcb::Config {
-    let base = report_config(node, block);
+fn buffered_config(node: &Element, block: &Element, node_name: &str) -> brcb::Config {
+    let base = report_config(node, block, node_name);
     let options = block.children.iter().find(|c| c.name == "OptFields");
     brcb::Config {
         rpt_id: base.rpt_id,

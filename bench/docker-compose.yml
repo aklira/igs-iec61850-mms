@@ -57,7 +57,12 @@ services:
     build:
       context: ./ours
     image: localhost/igs61850-ours:latest
-    command: ["igs61850-server", "--listen", "0.0.0.0:102"]
+    # OURS_ARGS adds the options of the server (for instance an SCL file of ./fixtures); empty by default.
+    command: ["sh", "-c", "exec igs61850-server --listen 0.0.0.0:102 $$OURS_ARGS"]
+    environment:
+      OURS_ARGS: ${OURS_ARGS:-}
+    volumes:
+      - ./fixtures:/fixtures:ro
     networks:
       bench:
         ipv4_address: 172.31.103.30

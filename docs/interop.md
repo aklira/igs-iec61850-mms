@@ -54,9 +54,21 @@ must decode without an error in tshark.
 The attributes of the block have the names of IEC 61850-8-1 table 73 in the reference server (`RptID`, `RptEna`, `Resv`, `DatSet`, `ConfRev`,
 `OptFlds`, `BufTm`, `SqNum`, `TrgOps`, `IntgPd`, `GI`): the flattened form of D-028 reads them without change.
 
-Not covered: the reverse direction (the reference example client receives the reports of our server). Our server serves the demonstration model,
-which has no report control block; serving a configuration read from SCL is the step that makes this row possible (a gap of the `igs61850-server`
-binary, see the table below). The buffered blocks (`EventsBRCB01` of the reference server) are in matrix C2.
+The reverse direction is matrix C3, below.
+
+## Matrix C3: reports, the reference client against our server (task D6, reverse)
+
+`bench/tests/test_d6_reverse.py`: the reference example client `iec61850_client_example_reporting` runs in the network namespace of our server,
+which is `igs61850-server --scl /fixtures/simpleio.cid --toggle-ms 1000` (the `scl` feature): a synthetic IED named `simpleIOGenericIO`, with
+the data set `LLN0$Events` and the unbuffered block `EventsRCB01`. The server changes `GGIO1.Ind1.stVal` every second.
+
+| Row | Result |
+| --- | --- |
+| The example reads the data set directory, reads the block, writes its attributes and enables it, and receives the reports | Passes: 22 reports of our server in the capture; the capture decodes cleanly; the example reports no service error |
+
+The example ends on its own timeout (exit 124), and its printed output is lost when it is killed: the reports are counted in the capture, not
+read from its output. Three findings of this row changed our server (D-040): the data set is named `LLN0$Events` (the name of 8-1 for a data set
+of a logical node), the block is read as one structure of its attributes, and the `DatSet` attribute is the object reference `device/LN$name`.
 
 ## Matrix C2: buffered reports, our client against the reference server (task B2)
 
@@ -99,7 +111,6 @@ after a lost association (our client sets an entry identifier of the peer and en
 | Gap | Task |
 | --- | --- |
 | Controls: select, operate, cancel | K |
-| Reports: the reverse direction (the reference client receives our reports), which needs a configuration read from SCL in the server binary | D6 follow-up (the server binary serves an SCL configuration) |
 | Buffered reports: the reverse direction, and the resumption from an entry identifier against the reference server (`EventsBRCB01`) | B2 follow-up (the server binary serves an SCL configuration, as for the unbuffered reports) |
 | GOOSE | Out of scope of the plan |
 | Data sets (dynamic creation and reading) | D |

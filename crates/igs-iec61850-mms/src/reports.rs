@@ -41,6 +41,29 @@ use crate::buffered::BufferedBlock;
 use crate::model::NodeValue;
 use crate::updates::{Notice, Updater};
 
+/// The name of the attribute that stands for the whole block: a read of the block as a structure.
+pub(crate) const WHOLE: &str = "";
+
+/// The value of the `DatSet` attribute: the object reference of the data set, `device/LN$name` (7-2 17.2.2.6, as the peer gives it).
+pub(crate) fn data_set_reference(device: &str, set: Option<&str>) -> String {
+    set.map_or_else(String::new, |name| format!("{device}/{name}"))
+}
+
+/// The name of a data set that a write of `DatSet` gives: the object reference of the block's device is taken to its name, and a
+/// name is taken as it is. A reference of another device is kept whole, so that it names no data set of this block.
+pub(crate) fn plain_data_set<'a>(device: &str, text: &'a str) -> &'a str {
+    match text.split_once('/') {
+        Some((domain, name)) if domain == device => name,
+        _ => text,
+    }
+}
+
+/// The attributes of an unbuffered block, in the order of its structure (8-1 table 73).
+const UNBUFFERED_ATTRIBUTES: [&str; 12] = [
+    "RptID", "RptEna", "Resv", "DatSet", "ConfRev", "OptFlds", "BufTm", "SqNum", "TrgOps",
+    "IntgPd", "GI", "Owner",
+];
+
 /// The block that an attribute names: an unbuffered block (`$RP$`) or a buffered one (`$BR$`), by its index in the state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BlockRef {
@@ -368,6 +391,21 @@ impl ReportState {
 
     /// The block and the attribute that an MMS item names (`node$RP$name$attribute` in the device's domain), if it names one.
     pub(crate) fn locate(&self, domain: &str, item: &str) -> Option<(BlockRef, String)> {
+        // The block as a whole (`node$RP$name`, without an attribute): its attributes as one structure (8-1 17.1.3).
+        if let Some(index) = self
+            .blocks
+            .iter()
+            .position(|block| block.device == domain && block.component() == item)
+        {
+            return Some((BlockRef::Unbuffered(index), WHOLE.to_string()));
+        }
+        if let Some(index) = self
+            .buffered
+            .iter()
+            .position(|block| block.device() == domain && block.component() == item)
+        {
+            return Some((BlockRef::Buffered(index), WHOLE.to_string()));
+        }
         let (component, attribute) = item.rsplit_once('$')?;
         if let Some(index) = self
             .blocks
@@ -415,8 +453,19 @@ impl ReportState {
         }
     }
 
-    /// The value of an attribute of an unbuffered block (8-1 table 73).
+    /// The value of an attribute of an unbuffered block (8-1 table 73). The whole block is the structure of its attributes, in the
+    /// order of the table.
     fn read_unbuffered(&self, index: usize, attribute: &str) -> AccessResult {
+        if attribute == WHOLE {
+            let mut values = Vec::with_capacity(UNBUFFERED_ATTRIBUTES.len());
+            for name in UNBUFFERED_ATTRIBUTES {
+                match self.read_unbuffered(index, name) {
+                    AccessResult::Success(value) => values.push(value),
+                    failure @ AccessResult::Failure(_) => return failure,
+                }
+            }
+            return AccessResult::Success(Data::Structure(values));
+        }
         let Some(block) = self.blocks.get(index) else {
             return AccessResult::Failure(DataAccessError::OBJECT_NON_EXISTENT);
         };
@@ -425,7 +474,10 @@ impl ReportState {
             "RptID" => Data::VisibleString(config.rpt_id.clone()),
             "RptEna" => Data::Boolean(block.urcb.is_enabled()),
             "Resv" => Data::Boolean(block.urcb.reserved_by().is_some()),
-            "DatSet" => Data::VisibleString(config.data_set.clone().unwrap_or_default()),
+            "DatSet" => Data::VisibleString(data_set_reference(
+                &block.device,
+                config.data_set.as_deref(),
+            )),
             "ConfRev" => Data::Unsigned(u128::from(config.conf_rev)),
             "OptFlds" => Data::BitString(optional_fields_bits(config.opt_flds)),
             "BufTm" => Data::Unsigned(config.buf_tm.as_millis()),
@@ -456,7 +508,13 @@ impl ReportState {
             ("RptEna", Data::Boolean(on)) => Write::RptEna(*on),
             ("Resv", Data::Boolean(on)) => Write::Reserve(*on),
             ("DatSet", Data::VisibleString(set)) => {
-                Write::DataSet((!set.is_empty()).then(|| set.clone()))
+                let device = self
+                    .blocks
+                    .get(index)
+                    .map(|block| block.device.clone())
+                    .unwrap_or_default();
+                let name = plain_data_set(&device, set);
+                Write::DataSet((!name.is_empty()).then(|| name.to_string()))
             }
             ("OptFlds", Data::BitString(bits)) => Write::OptFields(optional_fields_from_bits(bits)),
             ("BufTm", Data::Unsigned(millis)) => Write::BufTm(Duration::from_millis(

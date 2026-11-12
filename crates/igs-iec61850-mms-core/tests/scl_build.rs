@@ -66,7 +66,7 @@ fn the_sample_builds_its_model_data_sets_and_addresses() {
     let set = &configuration.data_sets[0];
     assert_eq!(
         (set.device.as_str(), set.node.as_str(), set.name.as_str()),
-        ("LD1", "LLN0", "DS1")
+        ("LD1", "LLN0", "LLN0$DS1")
     );
     assert_eq!(set.members.len(), 2);
     assert_eq!(set.members[1].node, "GGIO1");
@@ -147,7 +147,7 @@ fn an_unbuffered_report_control_is_declared_with_its_options_triggers_and_data_s
     );
     let config = &report.config;
     assert_eq!(config.rpt_id, "RPT1");
-    assert_eq!(config.data_set.as_deref(), Some("DS1"));
+    assert_eq!(config.data_set.as_deref(), Some("LLN0$DS1"));
     assert_eq!(config.conf_rev, 4);
     assert_eq!(config.buf_tm, std::time::Duration::from_millis(200));
     assert_eq!(config.intg_pd, std::time::Duration::from_millis(5000));

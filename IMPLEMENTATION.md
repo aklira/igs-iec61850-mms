@@ -547,7 +547,7 @@ The agent does not wait for these; it records the impact and continues with what
 | D3 URCB state machine | [x] |
 | D4 Report encoding and delivery | [x] |
 | D5 Client reporting | [x] |
-| D6 Reporting interop | [ ] |
+| D6 Reporting interop | [x] |
 | B1 BRCB state machine and history | [x] |
 | B2 BRCB delivery, segmentation and client side | [x] |
 | K1 Control state machines | [x] |

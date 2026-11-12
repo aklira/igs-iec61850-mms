@@ -254,6 +254,20 @@ pub fn decode_buffered_report(report: &UnconfirmedService) -> Option<DecodedBuff
     })
 }
 
+/// The name of a data set from the value of `DatSet`, which the server gives as an object reference (`device/LN$name`): the name only.
+fn plain_name(reference: &str) -> String {
+    reference
+        .split_once('/')
+        .map_or(reference, |(_, name)| name)
+        .to_string()
+}
+
+/// The value of `DatSet` that a write gives: the object reference of the data set, `device/LN$name` (7-2 17.2.2.6). The server takes a
+/// name too, but the peer needs the reference.
+fn data_set_reference(device: &str, name: Option<&str>) -> String {
+    name.map_or_else(String::new, |name| format!("{device}/{name}"))
+}
+
 impl IecClient {
     /// The attributes of a buffered block, read in one request.
     pub async fn buffered_values(
@@ -291,7 +305,7 @@ impl IecClient {
         };
         let enabled = matches!(next()?, Data::Boolean(true));
         let data_set = match next()? {
-            Data::VisibleString(name) if !name.is_empty() => Some(name),
+            Data::VisibleString(name) if !name.is_empty() => Some(plain_name(&name)),
             _ => None,
         };
         let conf_rev = match next()? {
@@ -350,9 +364,10 @@ impl IecClient {
         let (attribute, data) = match write {
             BufferedWrite::Enable(on) => ("RptEna", Data::Boolean(on)),
             BufferedWrite::RptId(id) => ("RptID", Data::VisibleString(id)),
-            BufferedWrite::DataSet(name) => {
-                ("DatSet", Data::VisibleString(name.unwrap_or_default()))
-            }
+            BufferedWrite::DataSet(name) => (
+                "DatSet",
+                Data::VisibleString(data_set_reference(device, name.as_deref())),
+            ),
             BufferedWrite::OptFields(fields) => (
                 "OptFlds",
                 Data::BitString(buffered_optional_fields_bits(fields)),

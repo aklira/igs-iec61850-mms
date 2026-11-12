@@ -413,7 +413,8 @@ fn specification(items: &[MmsName]) -> VariableAccessSpecification {
 /// The MMS name of a data set of a logical device: a domain-specific name, in the device's domain.
 fn data_set(device: &str, set: &str) -> Result<ObjectName, ClientError> {
     let device = Name::new(device)?;
-    let set = Name::new(set)?;
+    // The data set is an identifier of the domain, `LN$name` for a data set of a logical node (8-1 §8.1.2): `$` is allowed in it.
+    let set = MmsIdentifier::new(set)?;
     Ok(ObjectName::DomainSpecific(ObjectNameDomainSpecific {
         domain_id: Identifier(device.as_str().to_string()),
         item_id: Identifier(set.as_str().to_string()),

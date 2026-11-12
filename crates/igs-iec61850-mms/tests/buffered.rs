@@ -109,7 +109,7 @@ fn fields() -> BufferedFields {
 /// Sets the options and the triggers of the block, and enables it.
 async fn configure(client: &IecClient) {
     let steps = [
-        BufferedWrite::DataSet(Some("DS1".to_string())),
+        BufferedWrite::DataSet(Some("LLN0$DS1".to_string())),
         BufferedWrite::OptFields(fields()),
         BufferedWrite::TriggerOptions(TriggerOptions {
             data_change: true,
@@ -172,7 +172,7 @@ async fn a_buffered_block_reports_its_changes_to_the_association_that_enabled_it
         Some(true),
         "enabled from disabled without resynchronisation"
     );
-    assert_eq!(first.data_set.as_deref(), Some("DS1"));
+    assert_eq!(first.data_set.as_deref(), Some("LLN0$DS1"));
     let entry = &first.entries[0];
     assert!(entry
         .reference

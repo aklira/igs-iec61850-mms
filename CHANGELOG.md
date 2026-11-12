@@ -44,5 +44,9 @@ All notable changes to this project are recorded in this file. The format follow
 
 ### Changed
 
+- A data set of a logical node is named `LN$name` in MMS (for example `LLN0$Events`), and the `DatSet` attribute of a block
+  is the object reference `device/LN$name`; writes take either form (D-040).
+- A read of a control block (`node$RP$name`, `node$BR$name`) returns its attributes as one structure.
+
 - Visible and Unicode string types are variable lengths with a maximum, as the standard has them (a fix of the
   string sizes, which refused any other length).

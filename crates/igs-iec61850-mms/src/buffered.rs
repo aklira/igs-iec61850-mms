@@ -36,7 +36,27 @@ use igs_iso9506_mms_codec::generated::types::{
     UnconfirmedService, VariableAccessSpecification, WriteResponseItemItem,
 };
 
-use crate::reports::{due, since_1984, trigger_of, Wire};
+use crate::reports::{
+    data_set_reference, due, plain_data_set, since_1984, trigger_of, Wire, WHOLE,
+};
+
+/// The attributes of a buffered block, in the order of its structure (7-2 table 70).
+const BUFFERED_ATTRIBUTES: [&str; 14] = [
+    "RptID",
+    "RptEna",
+    "DatSet",
+    "ConfRev",
+    "OptFlds",
+    "BufTm",
+    "SqNum",
+    "TrgOps",
+    "IntgPd",
+    "GI",
+    "PurgeBuf",
+    "EntryID",
+    "TimeOfEntry",
+    "Owner",
+];
 
 /// The entries that a block keeps. The standard leaves the number to the server (7-2 §17.2.3.2.3.6, NOTE 2).
 pub(crate) const HISTORY_CAPACITY: usize = 256;
@@ -320,12 +340,24 @@ impl BufferedBlock {
     /// The value of an attribute of the block (7-2 table 70, GetBRCBValues). `ResvTms`, `Owner` and the other attributes that this
     /// release does not serve are not in the model.
     pub(crate) fn read_attribute(&self, attribute: &str) -> AccessResult {
+        if attribute == WHOLE {
+            let mut values = Vec::with_capacity(BUFFERED_ATTRIBUTES.len());
+            for name in BUFFERED_ATTRIBUTES {
+                match self.read_attribute(name) {
+                    AccessResult::Success(value) => values.push(value),
+                    failure @ AccessResult::Failure(_) => return failure,
+                }
+            }
+            return AccessResult::Success(Data::Structure(values));
+        }
         let config = self.brcb.config();
         let last = self.brcb.last_entry_id();
         let value = match attribute {
             "RptID" => Data::VisibleString(config.rpt_id.clone()),
             "RptEna" => Data::Boolean(self.brcb.is_enabled()),
-            "DatSet" => Data::VisibleString(config.data_set.clone().unwrap_or_default()),
+            "DatSet" => {
+                Data::VisibleString(data_set_reference(&self.device, config.data_set.as_deref()))
+            }
             "ConfRev" => Data::Unsigned(u128::from(config.conf_rev)),
             "OptFlds" => Data::BitString(buffered_optional_fields_bits(config.opt_flds)),
             "BufTm" => Data::Unsigned(config.buf_tm.as_millis()),
@@ -359,7 +391,8 @@ impl BufferedBlock {
             ("RptID", Data::VisibleString(id)) => Write::RptId(id.clone()),
             ("RptEna", Data::Boolean(on)) => Write::RptEna(*on),
             ("DatSet", Data::VisibleString(set)) => {
-                Write::DataSet((!set.is_empty()).then(|| set.clone()))
+                let name = plain_data_set(&self.device, set);
+                Write::DataSet((!name.is_empty()).then(|| name.to_string()))
             }
             ("OptFlds", Data::BitString(bits)) => Write::OptFields(buffered_fields_from_bits(bits)),
             ("BufTm", Data::Unsigned(millis)) => Write::BufTm(Duration::from_millis(
