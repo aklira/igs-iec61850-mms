@@ -214,9 +214,10 @@ M0 = phases P, F, N1–N4; M1 = phases A, S and D1; M2 = N5, D2–D6; M3 = phase
 - Produce: `cargo xtask catalogue` reading the NSD files and writing
   `crates/igs-iec61850-mms-core/src/generated/`: CDCs, constructed attributes, LN classes, FCs,
   enumerations, presence conditions, with the namespace name and version. Generated files carry a
-  "do not edit" banner citing their sources; `--check` fails when stale. If the NSD licence forbids
-  committing derived code, generation runs at build time from a local path instead, recorded in
-  PROVENANCE.
+  "do not edit" banner citing their sources; `--check` fails when stale. The NSD files never enter
+  this repository. Under the IEC Code Components EULA (decision of P5), every generated file keeps
+  the IEC copyright notice, the licence conditions, the disclaimer and the attribution to its part
+  and namespace release, and a `NOTICE` file repeats them.
 - Done when: counts of classes and enumerations match the NSD files; a test checks a sample.
 
 **F4 — Interop bench skeleton**
@@ -481,7 +482,9 @@ M0 = phases P, F, N1–N4; M1 = phases A, S and D1; M2 = N5, D2–D6; M3 = phase
 
 **R1 — Legal review and release** ⛔
 - Depends: all previous tasks of M3.
-- Gate: legal review of publishing code derived from the standards and code components, similarity
+- Gate: legal review of publishing code derived from the standards and code components (including
+  whether code generated from the NSD files may be published under Apache-2.0: the IEC Code
+  Components EULA is not OSI-approved and is granted to the purchaser of the standard), similarity
   check against libiec61850, crate names, git push and tag, for this repository and the phase N
   release of `igs-iso9506-mms`.
 - Done when: a maintainer approves and publishes.
@@ -510,7 +513,7 @@ The agent does not wait for these; it records the impact and continues with what
 | P2 Prepared texts of 7-1 and 61850-6 | [ ] |
 | P3 8-1 conformance and mapping data | [x] |
 | P4 ACSI conformance data | [ ] |
-| P5 IEC code components | [ ] |
+| P5 IEC code components | [x] |
 | P6 MMS modules with the 8-1 extensions | [x] |
 | P7 TISSUE selection | [ ] |
 | F1 Workspace skeleton | [ ] |
