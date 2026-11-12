@@ -519,7 +519,7 @@ The agent does not wait for these; it records the impact and continues with what
 | F1 Workspace skeleton | [x] |
 | F2 Continuous integration and ai-log | [x] |
 | F3 Catalogue generation | [x] |
-| F4 Interop bench skeleton | [ ] |
+| F4 Interop bench skeleton | [x] |
 | N1 Generator input and codec union | [ ] |
 | N2 IEC 61850 MMS profile | [ ] |
 | N3 Typed UtcTime, MMSString and TypeDescription | [ ] |
