@@ -29,8 +29,10 @@ pub mod updates;
 
 pub mod client;
 pub mod client_control;
+pub mod client_dataset;
 pub mod client_report;
 
+pub mod datasets;
 pub mod demo;
 
 use igs_iso9506_mms::vmd::Identity;

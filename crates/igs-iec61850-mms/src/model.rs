@@ -236,14 +236,16 @@ pub fn serve(server: &ServerModel, identity: Identity) -> Result<Served, ServeEr
 
 /// A server model served on MMS: the VMD of [`serve`], answering the services of its associations.
 pub struct ServedModel {
-    vmd: Vmd,
+    pub(crate) vmd: Vmd,
     updater: Updater,
+    /// The association-specific data sets of the clients (task D2), by association.
+    pub(crate) aa_lists: crate::datasets::AaLists,
     /// The unbuffered blocks of the reports, shared with the application's handle.
     reports: Arc<Mutex<ReportState>>,
     /// The control objects of the controllable data objects (task K2).
     controls: Controls,
     /// The origin of the clock of the controls and the reports of this model.
-    origin: Instant,
+    pub(crate) origin: Instant,
     /// The static data sets, as (device, name): the named variable lists of the configuration, which no client deletes.
     static_lists: BTreeSet<(String, String)>,
 }
@@ -258,6 +260,7 @@ impl ServedModel {
             reports: Arc::new(Mutex::new(ReportState::new())),
             controls: Controls::new(Box::new(AcceptAll)),
             origin: Instant::now(),
+            aa_lists: BTreeMap::new(),
             static_lists: BTreeSet::new(),
         })
     }
@@ -322,6 +325,7 @@ impl ServedModel {
             reports: Arc::new(Mutex::new(state)),
             controls,
             origin: Instant::now(),
+            aa_lists: BTreeMap::new(),
             static_lists,
         })
     }
@@ -395,6 +399,7 @@ impl Model for ServedModel {
     }
 
     fn released(&mut self, peer: &Peer) {
+        self.aa_lists.remove(&peer.id);
         let now = self.origin.elapsed();
         self.controls.released(now, peer.id);
         if let Ok(mut state) = self.reports.lock() {
@@ -422,6 +427,9 @@ impl Model for ServedModel {
         peer: &Peer,
         service: ConfirmedServiceRequest,
     ) -> Result<ConfirmedServiceResponse, ServiceError> {
+        if crate::datasets::is_association_request(&service) {
+            return self.dispatch_association(peer, service);
+        }
         let now = self.origin.elapsed();
         match service {
             ConfirmedServiceRequest::Read(request) if self.has_control_read(&request) => {
@@ -437,7 +445,7 @@ impl Model for ServedModel {
 
 impl ServedModel {
     /// The services of the VMD, after the checks of the static data sets.
-    fn dispatch_vmd(
+    pub(crate) fn dispatch_vmd(
         &mut self,
         peer: &Peer,
         service: ConfirmedServiceRequest,
@@ -492,7 +500,7 @@ impl ServedModel {
 
     /// A read with selects: each `SBO` is a select of its object; the other items are read by the VMD, and the answers keep the
     /// order of the items.
-    fn read_with_controls(
+    pub(crate) fn read_with_controls(
         &mut self,
         peer: &Peer,
         now: Duration,
@@ -557,7 +565,7 @@ impl ServedModel {
 
     /// A write with components of control objects: each is a control request of its object, and the other items are written by
     /// the VMD. The answers keep the order of the items.
-    fn write_with_controls(
+    pub(crate) fn write_with_controls(
         &mut self,
         peer: &Peer,
         now: Duration,

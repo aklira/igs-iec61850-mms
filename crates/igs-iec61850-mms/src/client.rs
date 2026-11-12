@@ -129,7 +129,7 @@ impl DataDefinition {
 
 /// A client of the served model: the discovery and the data access, over one MMS association.
 pub struct IecClient {
-    client: Client,
+    pub(crate) client: Client,
 }
 
 impl IecClient {

@@ -724,6 +724,34 @@ silent, to be confirmed by an observation test against other implementations.
 - **The handshake**: the reference server requires the `str2` parameter CBB, which the client offers only under `--lenient-parameter-cbbs` (A7).
 - **Confidence**: high for the forward rows (the peer's own reports, decoded; the capture decodes); the reverse row is not evaluated.
 
+### D-030 — The dynamic data sets: persistent and association-specific, their lifecycle and their limits (task D2; DS-001, DS-002, AT-08)
+
+- **Persistent** (domain-specific name): a client defines the set with `DefineNamedVariableList` on its device; the generic VMD holds it, and it lasts
+  until a client deletes it (any association may delete it: a persistent set has no owner in this release). The members are the variables of the
+  served model; a member that is not served refuses the definition (object non-existent).
+- **Association-specific** (application association-specific name, `AaSpecific`): the served model keeps the set for the association that defined
+  it, with the members as written. The generic VMD does not hold these names (8-1 and the MMS layer), so the served model does: definition, read
+  (through the members, with the rules of the normal reads), write (through the members, with the rules of the normal writes), attributes and
+  deletion are answered by `datasets.rs`. A set of another association is not seen; the same name in another association is another set; a
+  release of the association drops its sets (`Model::released`).
+- **Static sets are protected** (DS-002): a static set (D1) is never deleted or redefined by a client, whatever the association; the refusal is the
+  one of D1 (the delete of a static set is refused whole; a definition under its name is object exists).
+- **Referenced sets** (DS-002): a dynamic set cannot be referenced by a report block in this release: the blocks reference the data sets of their
+  configuration (their DatSet is checked against the configured sets). So no enabled service object refers to a dynamic set, and the refusal
+  "while referenced" applies to the static sets only, which are already refused. The DS-002 rule for dynamic sets referenced by enabled service
+  objects becomes live with the dynamic references of the blocks (a gap: the blocks take a set of the configuration).
+- **Not in D2**: the `GetNamedVariableListAttributes` of a persistent set reports `mms_deletable: true`, as the generic layer does; the access
+  control of a persistent set (who may define or delete it) is not set; the limit on the number of sets per association is not set (RUN-001 limits
+  of the model).
+- **Client API** (`client_dataset`): `define_data_set`, `delete_data_set` (persistent), `define_association_data_set`, `read_association_data_set`,
+  `delete_association_data_set`.
+- **Test**: `igs-iec61850-mms/tests/datasets.rs` (feature `scl`, 4 tests with two associations): a persistent set defined by one client is listed,
+  read and its members listed by another; a persistent set is deleted by another association; an association-specific set is private, the same
+  name is another set in another association, and it is dropped with its association; a static set cannot be defined again and an unserved member
+  refuses a definition.
+- **Confidence**: high for the privacy, the lifecycle of the association sets and the static protection (tests); medium for the choice that a
+  persistent set has no owner (the standard leaves the access control to the implementation; to confirm with the peer in D6).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
