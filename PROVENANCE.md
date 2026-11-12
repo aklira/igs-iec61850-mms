@@ -275,6 +275,10 @@ silent, to be confirmed by an observation test against other implementations.
   the client applies (Table 50 read at the level of its classes, not its service text).
 - **Test**: `served_writes.rs` (`the_directory_of_a_data_object_lists_its_attributes`); `served_model.rs`
   (`get_variable_access_attributes_gives_the_type_of_each_level`, `get_name_list_lists_the_node_and_its_flattened_names`).
+- **Correction (P1, CONTEXT §23)**: Table 50 of 8-1, read in the text, maps the class of `GetLogicalNodeDirectory`
+  to `NamedVariable` and says nothing of a filter on the names that contain `$`. The filter of the logical nodes is
+  therefore a choice of the client (task A6), not a rule of the standard. Its confidence is medium.
+
 
 ### D-014 — The clock sources: the quality is declared by the application or the operator (task A5)
 
