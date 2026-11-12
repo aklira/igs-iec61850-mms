@@ -307,10 +307,10 @@ impl ServedModel {
                 .ok_or_else(|| ServeError::Report(variable.name.clone()))?;
                 wires.push(wire);
             }
-            let node = format!("{}/{}", declared.device, declared.node);
             state.add_block(Block::new(
                 &declared.name,
-                &node,
+                &declared.device,
+                &declared.node,
                 declared.config.clone(),
                 wires,
             ));
@@ -462,10 +462,20 @@ impl ServedModel {
         match &request.variable_access_specification {
             VariableAccessSpecification::ListOfVariable(items) => items.iter().any(|item| {
                 matches!(&item.variable_specification,
-                    VariableSpecification::Name(name) if self.controls.item(name, true).is_some())
+                    VariableSpecification::Name(name)
+                        if self.controls.item(name, true).is_some() || self.block_attribute(name).is_some())
             }),
             VariableAccessSpecification::VariableListName(_) => false,
         }
+    }
+
+    /// The block and the attribute that an item names, if it is an attribute of an unbuffered block (`node$RP$name$attribute`).
+    fn block_attribute(&self, name: &ObjectName) -> Option<(usize, String)> {
+        let ObjectName::DomainSpecific(object) = name else {
+            return None;
+        };
+        let state = self.reports.lock().ok()?;
+        state.locate(&object.domain_id.0, &object.item_id.0)
     }
 
     /// Whether a write names a component of a control object (`SBOw`, `Oper`, `Cancel`).
@@ -473,7 +483,8 @@ impl ServedModel {
         match &request.variable_access_specification {
             VariableAccessSpecification::ListOfVariable(items) => items.iter().any(|item| {
                 matches!(&item.variable_specification,
-                    VariableSpecification::Name(name) if self.controls.item(name, false).is_some())
+                    VariableSpecification::Name(name)
+                        if self.controls.item(name, false).is_some() || self.block_attribute(name).is_some())
             }),
             VariableAccessSpecification::VariableListName(_) => false,
         }
@@ -496,20 +507,27 @@ impl ServedModel {
         let mut rest_items = Vec::new();
         let mut rest_index = Vec::new();
         for (index, item) in items.iter().enumerate() {
-            let control = match &item.variable_specification {
-                VariableSpecification::Name(name) => self.controls.item(name, true),
-                _ => None,
+            let (control, attribute) = match &item.variable_specification {
+                VariableSpecification::Name(name) => {
+                    (self.controls.item(name, true), self.block_attribute(name))
+                }
+                _ => (None, None),
             };
-            match control {
-                Some((object, _)) => {
-                    if let Some(slot) = answers.get_mut(index) {
-                        *slot = Some(self.controls.select_read(now, peer.id, object));
-                    }
+            if let Some((object, _)) = control {
+                if let Some(slot) = answers.get_mut(index) {
+                    *slot = Some(self.controls.select_read(now, peer.id, object));
                 }
-                None => {
-                    rest_items.push(item.clone());
-                    rest_index.push(index);
+            } else if let Some((block, attribute)) = attribute {
+                let result = match self.reports.lock() {
+                    Ok(state) => state.read_attribute(block, &attribute),
+                    Err(_) => AccessResult::Failure(DataAccessError::TEMPORARILY_UNAVAILABLE),
+                };
+                if let Some(slot) = answers.get_mut(index) {
+                    *slot = Some(result);
                 }
+            } else {
+                rest_items.push(item.clone());
+                rest_index.push(index);
             }
         }
         if !rest_items.is_empty() {
@@ -558,22 +576,31 @@ impl ServedModel {
         let mut rest_data = Vec::new();
         let mut rest_index = Vec::new();
         for (index, (item, data)) in items.iter().zip(request.list_of_data.iter()).enumerate() {
-            let control = match &item.variable_specification {
-                VariableSpecification::Name(name) => self.controls.item(name, false),
-                _ => None,
+            let (control, attribute) = match &item.variable_specification {
+                VariableSpecification::Name(name) => {
+                    (self.controls.item(name, false), self.block_attribute(name))
+                }
+                _ => (None, None),
             };
-            match control {
-                Some((object, component)) => {
-                    let answer = self.controls.write(now, peer.id, object, component, data);
-                    if let Some(slot) = answers.get_mut(index) {
-                        *slot = Some(answer);
+            if let Some((object, component)) = control {
+                let answer = self.controls.write(now, peer.id, object, component, data);
+                if let Some(slot) = answers.get_mut(index) {
+                    *slot = Some(answer);
+                }
+            } else if let Some((block, attribute)) = attribute {
+                let answer = match self.reports.lock() {
+                    Ok(mut state) => state.write_attribute(peer.id, block, &attribute, data),
+                    Err(_) => {
+                        WriteResponseItemItem::Failure(DataAccessError::TEMPORARILY_UNAVAILABLE)
                     }
+                };
+                if let Some(slot) = answers.get_mut(index) {
+                    *slot = Some(answer);
                 }
-                None => {
-                    rest_items.push(item.clone());
-                    rest_data.push(data.clone());
-                    rest_index.push(index);
-                }
+            } else {
+                rest_items.push(item.clone());
+                rest_data.push(data.clone());
+                rest_index.push(index);
             }
         }
         if !rest_items.is_empty() {

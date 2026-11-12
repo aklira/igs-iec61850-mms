@@ -17,7 +17,7 @@ use std::time::Duration;
 use igs_iso9506_mms_codec::generated::types::{Data, TimeOfDay};
 use igs_iso9506_mms_codec::schema::BitString;
 
-use super::urcb::{OptionalFields, Reason, Report};
+use super::urcb::{OptionalFields, Reason, Report, TriggerOptions};
 
 /// The variable name of the report in the MMS PDU: the VMD-specific list `RPT` (8-1 17.2.1).
 pub const REPORT_LIST: &str = "RPT";
@@ -155,7 +155,7 @@ pub fn binary_time(since_1984: Duration) -> TimeOfDay {
 
 /// The reported options as a bit string: the bits of table 41, with buffer-overflow, entry identifier and segmentation
 /// always zero, and the minimum of ten bits.
-fn optional_fields_bits(fields: OptionalFields) -> BitString {
+pub fn optional_fields_bits(fields: OptionalFields) -> BitString {
     let mut set = Vec::new();
     if fields.seq_num {
         set.push(1);
@@ -176,6 +176,79 @@ fn optional_fields_bits(fields: OptionalFields) -> BitString {
         set.push(8);
     }
     bits(10, set.into_iter())
+}
+
+/// The reported options of a bit string (table 41): the inverse of [`optional_fields_bits`].
+pub fn optional_fields_from_bits(bits: &BitString) -> OptionalFields {
+    OptionalFields {
+        seq_num: bits.bit(1),
+        time_stamp: bits.bit(2),
+        reason_code: bits.bit(3),
+        data_set_name: bits.bit(4),
+        data_ref: bits.bit(5),
+        conf_rev: bits.bit(8),
+    }
+}
+
+/// The trigger options as a bit string (table 37: data-change 1, quality-change 2, data-update 3, integrity 4, general-interrogation 5).
+pub fn triggers_to_bits(options: TriggerOptions) -> BitString {
+    let mut set = Vec::new();
+    if options.data_change {
+        set.push(1);
+    }
+    if options.quality_change {
+        set.push(2);
+    }
+    if options.data_update {
+        set.push(3);
+    }
+    if options.integrity {
+        set.push(4);
+    }
+    if options.general_interrogation {
+        set.push(5);
+    }
+    bits(6, set.into_iter())
+}
+
+/// The trigger options of a bit string (table 37): the inverse of [`triggers_to_bits`].
+pub fn triggers_from_bits(bits: &BitString) -> TriggerOptions {
+    TriggerOptions {
+        data_change: bits.bit(1),
+        quality_change: bits.bit(2),
+        data_update: bits.bit(3),
+        integrity: bits.bit(4),
+        general_interrogation: bits.bit(5),
+    }
+}
+
+/// The reasons for inclusion of a bit string (table 38), in the order of the table.
+pub fn reasons_from_bits(bits: &BitString) -> Vec<Reason> {
+    let mut reasons = Vec::new();
+    if bits.bit(1) {
+        reasons.push(Reason::DataChange);
+    }
+    if bits.bit(2) {
+        reasons.push(Reason::QualityChange);
+    }
+    if bits.bit(3) {
+        reasons.push(Reason::DataUpdate);
+    }
+    if bits.bit(4) {
+        reasons.push(Reason::Integrity);
+    }
+    if bits.bit(5) {
+        reasons.push(Reason::GeneralInterrogation);
+    }
+    reasons
+}
+
+/// The number of bits of a bit string (its octets, less the unused bits of the last one).
+pub fn bit_count(bits: &BitString) -> usize {
+    bits.bytes
+        .len()
+        .saturating_mul(8)
+        .saturating_sub(usize::from(bits.unused))
 }
 
 /// The reasons for inclusion as a bit string: the bits of table 38 (data-change 1 … general-interrogation 5), at least six.

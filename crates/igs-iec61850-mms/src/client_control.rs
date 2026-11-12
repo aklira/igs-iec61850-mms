@@ -142,7 +142,11 @@ pub fn termination(report: &UnconfirmedService) -> Option<Termination> {
 }
 
 /// The MMS name of a component of a control object: `LN$CO$DO$component`, in the device's domain.
-fn component_item(device: &str, object: &str, component: &str) -> Result<MmsName, ClientError> {
+pub(crate) fn component_item(
+    device: &str,
+    object: &str,
+    component: &str,
+) -> Result<MmsName, ClientError> {
     let device = Name::new(device)?;
     let identifier = MmsIdentifier::new(&format!("{object}${component}"))?;
     Ok(MmsName::new(Scope::Domain(device), identifier))

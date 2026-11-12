@@ -546,7 +546,7 @@ The agent does not wait for these; it records the impact and continues with what
 | D2 Dynamic datasets | [ ] |
 | D3 URCB state machine | [x] |
 | D4 Report encoding and delivery | [x] |
-| D5 Client reporting | [ ] |
+| D5 Client reporting | [x] |
 | D6 Reporting interop | [ ] |
 | B1 BRCB state machine and history | [ ] |
 | B2 BRCB delivery, segmentation and client side | [ ] |

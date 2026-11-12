@@ -29,6 +29,7 @@ pub mod updates;
 
 pub mod client;
 pub mod client_control;
+pub mod client_report;
 
 pub mod demo;
 

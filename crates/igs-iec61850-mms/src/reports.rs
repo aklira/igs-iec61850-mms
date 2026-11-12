@@ -25,15 +25,16 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use igs_iec61850_mms_core::control::ClientId;
 use igs_iec61850_mms_core::model::layout::value_at;
 use igs_iec61850_mms_core::report::encode::{
-    information_report, object_reference, Content, Variable, REPORT_LIST,
+    information_report, object_reference, optional_fields_bits, optional_fields_from_bits,
+    triggers_from_bits, triggers_to_bits, Content, Variable, REPORT_LIST,
 };
 use igs_iec61850_mms_core::report::urcb::{
     Action, Config, Event, Refusal, Report, Timer, Trigger, TriggerOptions, Urcb, Write,
 };
 use igs_iso9506_mms::server::{Outbound, PeerId};
 use igs_iso9506_mms_codec::generated::types::{
-    AccessResult, Data, Identifier, InformationReport, ObjectName, UnconfirmedService,
-    VariableAccessSpecification,
+    AccessResult, Data, DataAccessError, Identifier, InformationReport, ObjectName,
+    UnconfirmedService, VariableAccessSpecification, WriteResponseItemItem,
 };
 
 use crate::model::NodeValue;
@@ -116,6 +117,8 @@ impl Wire {
 #[cfg_attr(not(feature = "scl"), allow(dead_code))]
 pub(crate) struct Block {
     name: String,
+    device: String,
+    node: String,
     reference: String,
     urcb: Urcb,
     wires: Vec<Wire>,
@@ -126,8 +129,14 @@ pub(crate) struct Block {
 
 #[cfg_attr(not(feature = "scl"), allow(dead_code))]
 impl Block {
-    /// A block named `name` of the logical node `reference`, with this configuration and these variables, in list order.
-    pub(crate) fn new(name: &str, node: &str, config: Config, wires: Vec<Wire>) -> Self {
+    /// A block named `name` of the logical node `node` of the device `device`, with this configuration and these variables, in list order.
+    pub(crate) fn new(
+        name: &str,
+        device: &str,
+        node: &str,
+        config: Config,
+        wires: Vec<Wire>,
+    ) -> Self {
         let mut by_variable: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for (index, wire) in wires.iter().enumerate() {
             by_variable
@@ -137,13 +146,20 @@ impl Block {
         }
         Self {
             name: name.to_string(),
-            reference: format!("{node}.{name}"),
+            device: device.to_string(),
+            node: node.to_string(),
+            reference: format!("{device}/{node}.{name}"),
             urcb: Urcb::new(config),
             wires,
             by_variable,
             timers: Vec::new(),
             owner: None,
         }
+    }
+
+    /// The component of the block in the model: `node$RP$name` (8-1 §17.1.3).
+    fn component(&self) -> String {
+        format!("{}$RP${}", self.node, self.name)
     }
 
     /// The report as the MMS PDU of the list `RPT`, with the options and the variables of the block.
@@ -288,6 +304,86 @@ impl ReportState {
         self.outbox.drain(..).collect()
     }
 
+    /// The block and the attribute that an MMS item names (`node$RP$name$attribute` in the device's domain), if it names one.
+    pub(crate) fn locate(&self, domain: &str, item: &str) -> Option<(usize, String)> {
+        let (component, attribute) = item.rsplit_once('$')?;
+        self.blocks
+            .iter()
+            .position(|block| block.device == domain && block.component() == component)
+            .map(|index| (index, attribute.to_string()))
+    }
+
+    /// The value of an attribute of a block (8-1 table 73), as a read of the model gives it.
+    pub(crate) fn read_attribute(&self, index: usize, attribute: &str) -> AccessResult {
+        let Some(block) = self.blocks.get(index) else {
+            return AccessResult::Failure(DataAccessError::OBJECT_NON_EXISTENT);
+        };
+        let config = block.urcb.config();
+        let value = match attribute {
+            "RptID" => Data::VisibleString(config.rpt_id.clone()),
+            "RptEna" => Data::Boolean(block.urcb.is_enabled()),
+            "Resv" => Data::Boolean(block.urcb.reserved_by().is_some()),
+            "DatSet" => Data::VisibleString(config.data_set.clone().unwrap_or_default()),
+            "ConfRev" => Data::Unsigned(u128::from(config.conf_rev)),
+            "OptFlds" => Data::BitString(optional_fields_bits(config.opt_flds)),
+            "BufTm" => Data::Unsigned(config.buf_tm.as_millis()),
+            "SqNum" => Data::Unsigned(u128::from(block.urcb.sequence())),
+            "TrgOps" => Data::BitString(triggers_to_bits(config.trg_ops)),
+            "IntgPd" => Data::Unsigned(config.intg_pd.as_millis()),
+            "GI" => Data::Boolean(false),
+            "Owner" => Data::OctetString(Vec::new()),
+            _ => return AccessResult::Failure(DataAccessError::OBJECT_NON_EXISTENT),
+        };
+        AccessResult::Success(value)
+    }
+
+    /// A write of an attribute of a block: the write of the state machine, with its refusal as the access result. The
+    /// attributes that the standard does not let a client write (`ConfRev`, `SqNum`, `Owner`) are access denied.
+    pub(crate) fn write_attribute(
+        &mut self,
+        peer: PeerId,
+        index: usize,
+        attribute: &str,
+        data: &Data,
+    ) -> WriteResponseItemItem {
+        let Some(name) = self.blocks.get(index).map(|block| block.name.clone()) else {
+            return WriteResponseItemItem::Failure(DataAccessError::OBJECT_NON_EXISTENT);
+        };
+        let write = match (attribute, data) {
+            ("RptID", Data::VisibleString(id)) => Write::RptId(id.clone()),
+            ("RptEna", Data::Boolean(on)) => Write::RptEna(*on),
+            ("Resv", Data::Boolean(on)) => Write::Reserve(*on),
+            ("DatSet", Data::VisibleString(set)) => {
+                Write::DataSet((!set.is_empty()).then(|| set.clone()))
+            }
+            ("OptFlds", Data::BitString(bits)) => Write::OptFields(optional_fields_from_bits(bits)),
+            ("BufTm", Data::Unsigned(millis)) => Write::BufTm(Duration::from_millis(
+                u64::try_from(*millis).unwrap_or(u64::MAX),
+            )),
+            ("TrgOps", Data::BitString(bits)) => Write::TrgOps(triggers_from_bits(bits)),
+            ("IntgPd", Data::Unsigned(millis)) => Write::IntgPd(Duration::from_millis(
+                u64::try_from(*millis).unwrap_or(u64::MAX),
+            )),
+            ("GI", Data::Boolean(true)) => Write::GeneralInterrogation,
+            ("GI", Data::Boolean(false)) => return WriteResponseItemItem::Success,
+            ("ConfRev" | "SqNum" | "Owner", _) => {
+                return WriteResponseItemItem::Failure(DataAccessError::OBJECT_ACCESS_DENIED)
+            }
+            (
+                "RptID" | "RptEna" | "Resv" | "DatSet" | "OptFlds" | "BufTm" | "TrgOps" | "IntgPd",
+                _,
+            ) => return WriteResponseItemItem::Failure(DataAccessError::TYPE_INCONSISTENT),
+            _ => return WriteResponseItemItem::Failure(DataAccessError::OBJECT_NON_EXISTENT),
+        };
+        match self.request(peer, &name, write) {
+            Ok(()) => WriteResponseItemItem::Success,
+            Err(ReportError::Refused(refusal)) => {
+                WriteResponseItemItem::Failure(refusal_error(refusal))
+            }
+            Err(_) => WriteResponseItemItem::Failure(DataAccessError::OBJECT_NON_EXISTENT),
+        }
+    }
+
     /// The names of the blocks, in document order.
     pub(crate) fn names(&self) -> Vec<String> {
         self.blocks.iter().map(|block| block.name.clone()).collect()
@@ -351,6 +447,21 @@ impl Reports {
     /// The block answers it as the state machine does; a refused write changes nothing.
     pub fn request(&self, peer: PeerId, block: &str, write: Write) -> Result<(), ReportError> {
         self.with(|state| state.request(peer, block, write))?
+    }
+}
+
+/// The access result of a refusal of a write of a block (table 100 for the control blocks, and the same causes here): a
+/// reservation held by another client is temporarily unavailable; the attributes that a block does not take while enabled, or a
+/// general interrogation while disabled, are access denied; a data set that does not exist is an invalid value.
+fn refusal_error(refusal: Refusal) -> DataAccessError {
+    match refusal {
+        Refusal::Reserved => DataAccessError::TEMPORARILY_UNAVAILABLE,
+        Refusal::NotReserved | Refusal::Enabled | Refusal::GeneralInterrogationNotAllowed => {
+            DataAccessError::OBJECT_ACCESS_DENIED
+        }
+        Refusal::DataSetNull | Refusal::UnknownDataSet => DataAccessError::OBJECT_VALUE_INVALID,
+        #[allow(unreachable_patterns)]
+        _ => DataAccessError::OBJECT_ACCESS_DENIED,
     }
 }
 

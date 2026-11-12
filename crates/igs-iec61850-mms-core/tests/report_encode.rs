@@ -227,3 +227,36 @@ fn an_empty_identifier_is_replaced_by_the_block_reference() {
     let results = information_report(&block, &report(ReportKind::Notification, &[]));
     assert!(matches!(&results[0], Data::VisibleString(r) if r == "LD1/LLN0.RP.RPT1"));
 }
+
+#[test]
+fn the_options_triggers_and_reasons_decode_what_they_encode() {
+    use igs_iec61850_mms_core::report::encode::{
+        optional_fields_bits, optional_fields_from_bits, reasons_from_bits, triggers_from_bits,
+        triggers_to_bits,
+    };
+    use igs_iec61850_mms_core::report::urcb::TriggerOptions;
+    let fields = OptionalFields {
+        seq_num: true,
+        time_stamp: false,
+        reason_code: true,
+        data_set_name: true,
+        data_ref: false,
+        conf_rev: true,
+    };
+    assert_eq!(
+        optional_fields_from_bits(&optional_fields_bits(fields)),
+        fields
+    );
+    let triggers = TriggerOptions {
+        data_change: true,
+        quality_change: false,
+        data_update: true,
+        integrity: true,
+        general_interrogation: false,
+    };
+    assert_eq!(triggers_from_bits(&triggers_to_bits(triggers)), triggers);
+    assert_eq!(
+        reasons_from_bits(&triggers_to_bits(triggers)),
+        [Reason::DataChange, Reason::DataUpdate, Reason::Integrity]
+    );
+}

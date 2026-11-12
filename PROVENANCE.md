@@ -676,6 +676,37 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the state transitions (tests) and the decoding (vectors built from the reports of the tests); medium for the
   reading that the outcome of a deferred command is the CommandTermination of the enhanced models only (the normal models do not terminate, as K1 states).
 
+### D-028 — The client side of the unbuffered reports: attributes as variables, configuration by writes, decoding of the reports (task D5; RPT-001, RPT-002, RPT-003)
+
+- **Attributes of a block**: each attribute of the block (8-1 table 73) is an MMS named variable `node$RP$block$attribute` in the device's domain
+  (`RptID`, `RptEna`, `Resv`, `DatSet`, `ConfRev`, `OptFlds`, `BufTm`, `SqNum`, `TrgOps`, `IntgPd`, `GI`, `Owner`). The served model names its data
+  attributes the same way (flattened, as D-005 chose), so a client reads a block by its components. The structure of 8-1 (the whole block as one
+  variable, read by GetURCBValues) is not served: a client expecting the structure must be checked against the peer (D6).
+- **Reads**: a read of the attributes is answered from the state of the block: `RptEna` and `Resv` from the state machine, `SqNum` from the next report,
+  `DatSet` as the empty string when NULL, `GI` as FALSE (a request is not kept as a state), `Owner` as an empty octet string (the owner is not
+  reported as an IP address in this release).
+- **Writes**: each attribute write is one request of the state machine of D3: `Resv`, `RptEna`, `DatSet`, `OptFlds`, `BufTm`, `TrgOps`, `IntgPd`, `RptID`
+  as the standard gives them (configuration only while disabled and by the holder of the reservation). `GI` TRUE is a general-interrogation request;
+  `GI` FALSE is accepted and changes nothing. `ConfRev`, `SqNum` and `Owner` are read-only: access denied. A refusal is an access result: a
+  reservation held by another client is TEMPORARILY-UNAVAILABLE, the other refusals of the state (not reserved, enabled, general interrogation while
+  disabled) are OBJECT-ACCESS-DENIED, and a data set that does not exist or is not set is an invalid value (table 100 is incomplete in the prepared
+  text: see D-026).
+- **Client API** (`client_report`): `urcb_values` reads the attributes in one request; `urcb_write` writes one attribute (`UrcbWrite`), the typed form
+  of each write. `decode_report` decodes an `InformationReport` on `RPT` in the order of table 74: the options (table 41), the sequence number, the time
+  of entry, the data set name, the configuration revision, the inclusion bit string, the references and values of the included variables, and their
+  reasons (table 38). The decoder reads the options of the report, so the layout does not depend on the block's configuration; an entry carries the
+  position of its variable in the data set.
+- **Test**: `igs-iec61850-mms/tests/reporting.rs` (AT-09, feature `scl`, 8 tests): the owner receives the decoded report of a change, in the layout (RptID,
+  data set, sequence number 0 at the first report, configuration revision, the position and value of the variable, its reason); two clients with
+  distinct subscriptions each receive only their block's reports; a disabled block reports nothing and its values are read; a general interrogation
+  reports every member with its reason; the integrity period repeats a report of every member; a quality trigger alone does not report a data change
+  but reports a quality change; a write by a client that does not hold the block is refused. `decode_report` refuses a message that is not on `RPT`.
+  `igs-iec61850-mms-core/tests/report_encode.rs` checks the round trip of the options, the triggers and the reasons.
+- **Not in D5**: the buffered blocks (B tasks); the indexed names (`indexed="true"`); the preconfigured reservation of an SCL `ClientLN` (a client set of
+  the owner is not configured here); the interoperability with the reference peer (D6, the bench is not run in this session).
+- **Confidence**: high for the encoding and decoding (round trip, and the layout of table 74 checked by the vectors of D4); medium for the flattened
+  attribute names as the standard's clients read them, which is what D6 must confirm.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
