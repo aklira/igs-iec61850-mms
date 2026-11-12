@@ -34,6 +34,7 @@ pub mod client_report;
 
 pub mod datasets;
 pub mod demo;
+pub mod gateway;
 
 use igs_iso9506_mms::vmd::Identity;
 

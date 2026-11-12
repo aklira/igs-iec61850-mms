@@ -556,7 +556,7 @@ The agent does not wait for these; it records the impact and continues with what
 | E1 Inventory of Edition 1 differences | [x] |
 | E2 Detection and profile | [x] |
 | E3 Edition 1 interop | [ ] |
-| G1 One runtime, clients and server | [ ] |
+| G1 One runtime, clients and server | [x] |
 | G2 Proxy model, quality and controls | [ ] |
 | V1 Capability statements | [ ] |
 | V2 Documentation, examples, binaries | [ ] |

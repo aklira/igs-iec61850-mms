@@ -774,6 +774,23 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the codes and the detection of the namespace strings (tests with served devices); medium for the table of the causes of
   the first edition beyond 26 and 27 (to confirm with a first-edition capture, E3).
 
+### D-032 — The gateway building blocks: one runtime, explicit mirrors, and the path of the values (task G1; GW-001)
+
+- **Composition**: a process runs the clients of the downstream servers and the upstream server in one tokio runtime. The mirror of a downstream
+  variable is explicit: a (downstream device, variable) pair maps to one (upstream device, variable) pair, and the names are the ones the models use.
+- **Path of the values**: a mirror step reads the downstream variables of one client, then sets the upstream variables through the updater (A5), one
+  update per upstream node. The updater never waits for the network, so the model task of the upstream server is not blocked (GW-001).
+- **Errors are not hidden**: a failed downstream read is returned to the caller of the step; the loop `run_mirror` stops with that error. An item the
+  downstream does not answer is left out of the step (not guessed), and an upstream refusal is returned.
+- **Test**: `igs-iec61850-mms/tests/gateway.rs` (feature `scl`): two downstream servers (the sample configuration), two downstream clients, one upstream
+  server built in code with two devices; a change downstream reaches the upstream model, and the upstream client reads it; the other downstream value
+  stays as it was.
+- **Not in G1** (G2): the quality on the loss of a downstream association (GW-003), the forwarding of controls with the deferred outcome (GW-004), and
+  the upstream model built from SCL with its own reports (GW-002, GW-005; the reports of an upstream block already follow its own model, since the
+  updater notices every change of the model).
+- **Confidence**: high for the composition and the path of the values (the integration test); the example of the requirement with the peer's example
+  servers as the downstream is not run here.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
