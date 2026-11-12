@@ -141,6 +141,64 @@ silent, to be confirmed by an observation test against other implementations.
 - **Not decided here**: the data model that uses these types (A3, A4); the conformance of the enumerations to the
   catalogue values beyond the classification.
 
+### D-005 — Order of the members of a logical node (task A3)
+
+- **Decision**: the data objects of a logical node are in the order the application gives them (the SCL order);
+  the attributes of a data object are in the order of its common data class (7-3); the sub data objects come after
+  the attributes of their class, each in its class order; the components of a constructed attribute are all
+  included, in the order of its definition, whatever their presence.
+- **Sources**: IEC 61850-8-1 §7.3.1 (the order of the components of a functional constraint follows the SCL data
+  objects, and the order of the attributes of a common data class follows 7-3), and its NOTE 3 on compatibility.
+- **Confidence**: medium. The catalogue does not keep the position of the sub data objects among the attributes of a
+  class, so they come last; a class that places one between attributes would need its position from the namespace.
+- **Test**: `tests/model.rs` (the order of the functional constraints, the order of the attributes of a data object).
+
+### D-006 — Flattened names and the identifier limit (task A3)
+
+- **Decision**: a logical node is one named variable, whose type has one component per functional constraint, in the
+  order of Figure 4 of 8-1 (MX, ST, CO, CF, DC, SP, SG, RP, LG, BR, GO, GS, SV, SE, MS, US, EX, SR, OR, BL, RG, RS),
+  then one component per data object of that constraint, then the attributes and the sub data objects. Each node of
+  this tree is also a flattened named variable `LN$FC$DO$DA$...`, from the data object down. The flattened names of
+  the functional constraint alone (`LN$FC`) are not variables: the examples of 8-1 §7.3.3 start at the data object.
+- **The limit**: a flattened name longer than the identifier limit of the profile (64 characters under the IEC 61850
+  profile, Annex F.3.2) is not listed. Its number is reported (`LnLayout::long_names`), and it stays reachable by
+  alternate access to the node variable, as 8-1 §7.3.3 and §7.3.4 allow. The MMS VMD accepts 64 characters only when
+  its identifier limit is raised by profile (task N6 of igs-iso9506-mms, recorded there).
+- **Sources**: IEC 61850-8-1 §7.3.1, §7.3.3, §7.3.4; Annex F.3.2 for the 64 characters.
+- **Confidence**: high for the tree and the flattened names, which follow the examples of §7.3.3 and §7.3.4; medium
+  for the omission of the functional-constraint level, which the text does not list either way.
+
+### D-007 — Presence checks of the model (task A3)
+
+- **Decision**: a mandatory member is the one whose presence is `M` (or `Mmulti`, which needs one instance); it is
+  always instantiated, and a logical node without one is refused. Optional and conditional members are instantiated
+  only when the application names them. A multiple data object (`Omulti`, `Mmulti`, the ranges) is named by its
+  definition and a number (`Ind1`, `Ind2`). A name that the class or the common data class does not define is
+  refused. The other presence conditions (`MOcond`, `MFsubst`, `AtLeastOne`, the groups, and so on) are not evaluated:
+  they are instantiated when named, and their evaluation waits for the data they depend on (`docs/capabilities.md`).
+- **Sources**: IEC 61850-7-3 (presence conditions, the attributes of the common data classes), IEC 61850-7-4
+  (the data objects of the classes and their multiplicity), MODEL-004.
+- **Confidence**: high for `M` and the names; medium for the reading of `Mmulti` as one instance at least, because the
+  catalogue keeps the condition name only.
+
+### D-008 — Types of the attributes in the model (task A3)
+
+- **Decision**: each type of an attribute is resolved from the catalogue to its MMS type description: the basic types
+  of 8-1 Table 15 and §8.1.3 with a fixed form (`BOOLEAN`, the integers, `FLOAT32`, the visible, octet and Unicode
+  strings with their lengths, `ObjRef` and `Currency`, `Timestamp`, `Quality`, `Check`), the enumerations of the
+  catalogue (an integer that holds the largest standardised value), and the constructed attributes (structures).
+  An attribute whose type name the class leaves empty takes the type name of its data object (its `underlying_type`
+  in the catalogue, for example the enumeration `BehaviourModeKind` of the status `Beh`), with its own kind.
+- **Not mapped yet** (refused with `UnmappedType` or `Unsupported`, never guessed): `Dbpos`, `Tcmd`, `TrgOps`,
+  `OptFlds`, `SvOptFlds`, `EntryID`, `EntryTime`, `PhyComAddr` and the physical addresses of the Scsm types; the
+  enumerations chosen by the instance; the arrays; the attributes of the service-tracking class of 8-1 (`Undefined`);
+  and the classes with variants (the setting groups), whose variant needs a choice that the model does not make yet.
+  Each one is a known gap in `docs/capabilities.md`, to be closed by its own task (reporting, control, setting groups).
+- **Sources**: IEC 61850-8-1 Table 15, §8.1.2.2, §8.1.2.3, §8.1.3.7, §8.1.3.17, §8.2; the catalogue of the
+  namespaces (`underlying_type`).
+- **Confidence**: high for the mapped types (their forms are in Table 15 and in the A2 vectors); medium for the
+  enumeration of a status taken from `underlying_type`, which the catalogue gives without its kind.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
