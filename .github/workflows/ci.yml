@@ -44,7 +44,8 @@ jobs:
       - name: Tests
         run: cargo test --workspace --all-features
 
-      # Examples are added with task V2 (cargo build --workspace --examples).
+      - name: Examples
+        run: cargo build --workspace --examples --all-features
 
       - name: Coverage (report only)
         run: cargo llvm-cov --workspace --all-features --summary-only

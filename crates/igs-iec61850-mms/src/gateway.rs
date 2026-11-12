@@ -140,6 +140,7 @@ pub async fn mirror_step(
                 format!("{}/{}", mirror.upstream_device, mirror.upstream_variable),
                 value,
             ));
+        count = count.saturating_add(1);
         let quality = Quality::good();
         by_node
             .entry(format!("{}/{}", mirror.upstream_device, node))
@@ -154,7 +155,6 @@ pub async fn mirror_step(
             ));
     }
     for changes in by_node.values() {
-        count = count.saturating_add(changes.len());
         updater
             .update(changes)
             .map_err(|error| MirrorError::Update(error.to_string()))?;

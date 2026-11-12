@@ -827,6 +827,21 @@ silent, to be confirmed by an observation test against other implementations.
 - **Tests**: `xtask/src/statements.rs`: six tests (the parsing, the five columns, the empty function, a gap in the rendering, and the repository
   source: every test named there exists).
 
+### D-035 — The examples, the changelog and the documentation gate (task V2)
+
+- **Examples** (`crates/igs-iec61850-mms/examples/`): `client` reads the status of the demonstration model from a server given on the command
+  line; `server` serves it and changes its status every second through the updater, as an application does; `gateway` runs one mirror step in one
+  process, with a downstream and an upstream server on the loopback interface, and the demonstration model on both sides (its device name is the
+  same on both, which the upstream server does not mind). The examples are built by CI (`cargo build --workspace --examples`).
+- **Fix found by the gateway example**: `mirror_step` returned the number of upstream changes (a value and its quality per mirror, so two) while its
+  documentation says variables. It now counts one per mirror read. No test depended on the old count.
+- **Documentation gate**: the rustdoc warning of `Limits::max_instances` (a link to a private constant) is a plain reference; the CI step
+  `RUSTDOCFLAGS="-D warnings"` passes, and no public item is undocumented.
+- **Changelog**: `CHANGELOG.md` (Keep a Changelog) for the unreleased 0.1.0 of the crate. It lists the implemented capabilities and the gaps as they
+  are in `docs/capabilities.tsv`; the version is not chosen here.
+- **Confidence**: high for the examples and the documentation gate (they build and run); medium on the changelog's wording, which the maintainer
+  should read before a release.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

@@ -559,7 +559,7 @@ The agent does not wait for these; it records the impact and continues with what
 | G1 One runtime, clients and server | [x] |
 | G2 Proxy model, quality and controls | [x] |
 | V1 Capability statements | [ ] |
-| V2 Documentation, examples, binaries | [ ] |
+| V2 Documentation, examples, binaries | [x] |
 | V3 Robustness and performance evidence | [ ] |
 | R1 Legal review and release ⛔ | [ ] |
 

@@ -48,7 +48,7 @@ pub struct Limits {
     pub max_depth: usize,
     /// The largest number of elements.
     pub max_elements: usize,
-    /// The largest number of instances (the elements of [`INSTANCE_NAMES`]).
+    /// The largest number of instances (the names of the instances the parser knows, see `INSTANCE_NAMES`).
     pub max_instances: usize,
     /// The largest number of attributes of one element.
     pub max_attributes: usize,
