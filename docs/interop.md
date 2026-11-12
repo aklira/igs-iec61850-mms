@@ -40,6 +40,24 @@ an error PDU. The capture decodes cleanly. The functional part of each example i
 | `iec61850_client_example_log` | 3 of 3 | a log and its control block | logs (O2) |
 | `iec61850_client_file_async` | conclude only | a file to transfer; the example sends no service request without one | file services (O1) |
 
+## Matrix C: reports, our client against the reference server (task D6)
+
+`bench/tests/test_d6_reports.py`: our client configures the unbuffered block `EventsRCB01` of the example `server_example_basic_io`
+(`LLN0$RP$EventsRCB01`, data set `LLN0$Events`), enables it, and decodes the reports the reference server sends. The capture of each row
+must decode without an error in tshark.
+
+| Row | Result |
+| --- | --- |
+| General interrogation: one report of every member, reason general-interrogation | Passes: four entries, the reason decoded, the sequence number from zero |
+| Integrity period of 1 s: periodic reports of every member, reason integrity | Passes: three reports with sequence numbers 0, 1, 2, four entries each |
+
+The attributes of the block have the names of IEC 61850-8-1 table 73 in the reference server (`RptID`, `RptEna`, `Resv`, `DatSet`, `ConfRev`,
+`OptFlds`, `BufTm`, `SqNum`, `TrgOps`, `IntgPd`, `GI`): the flattened form of D-028 reads them without change.
+
+Not covered: the reverse direction (the reference example client receives the reports of our server). Our server serves the demonstration model,
+which has no report control block; serving a configuration read from SCL is the step that makes this row possible (a gap of the `igs61850-server`
+binary, see the table below). The buffered blocks (`EventsBRCB01` of the reference server) are the task B.
+
 ## Findings of the bench, and the fixes
 
 - **The order of a listing.** The first version of the client refused a page of names that was not sorted. The reference
@@ -56,13 +74,18 @@ an error PDU. The capture decodes cleanly. The functional part of each example i
   container. The rows find the association by its PDU, not by its address.
 - **The zero-byte PDU artefact.** Wireshark reports an internal error on a zero-byte MMS PDU in the reference traffic. The
   filter of F4 excludes it, and the same filter applies to every row.
+- **The strength of the handshake.** The reference server refuses an association that does not negotiate the `str2` parameter CBB,
+  which our client does not offer by default. The client's `--lenient-parameter-cbbs` option (A7) is needed for the peer, as for the
+  data-access rows.
 
 ## Known gaps, with the task that closes each
 
 | Gap | Task |
 | --- | --- |
 | Controls: select, operate, cancel | K |
-| Reports and their control blocks; GOOSE | B, D |
+| Reports: the reverse direction (the reference client receives our reports), which needs a configuration read from SCL in the server binary | D6 follow-up (the server binary serves an SCL configuration) |
+| Buffered reports (`EventsBRCB01` of the reference server) | B |
+| GOOSE | Out of scope of the plan |
 | Data sets (dynamic creation and reading) | D |
 | Setting groups (select and edit) | O3 |
 | File services | O1 |

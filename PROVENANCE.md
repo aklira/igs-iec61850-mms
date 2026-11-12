@@ -707,6 +707,23 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the encoding and decoding (round trip, and the layout of table 74 checked by the vectors of D4); medium for the flattened
   attribute names as the standard's clients read them, which is what D6 must confirm.
 
+### D-029 — The reports against the reference peer: the forward rows, and what the reverse row needs (task D6; bench)
+
+- **Rows that pass** (`bench/tests/test_d6_reports.py`, the reference example `server_example_basic_io`): our client `report` command configures the
+  unbuffered block `LLN0$RP$EventsRCB01` (data set `LLN0$Events`), enables it, and decodes the reports of the reference server: the general
+  interrogation (four entries, reason general-interrogation) and the integrity period (sequence numbers 0, 1, 2; four entries each, reason
+  integrity). The capture decodes without an error in tshark.
+- **Evidence of the reading**: the reference server serves the attributes of its block as variables `LLN0$RP$EventsRCB01$RptID`, `…$RptEna`,
+  `…$DatSet`, `…$OptFlds`, `…$TrgOps`, `…$IntgPd`, `…$GI`, `…$SqNum`, `…$ConfRev`, `…$BufTm`, `…$Resv` (8-1 table 73, flattened): the names
+  D-028 serves and reads. The data set is named `simpleIOGenericIO/LLN0$Events` (the domain is part of the name the peer reports).
+- **Not passing: the reverse row.** The example client of the peer that receives the reports of our server needs (a) our server to serve a
+  configuration read from SCL (the binary serves the demonstration model, without a report control block: the step is the S3 build wired into
+  `igs61850-server`), and (b) a model that answers what the example reads (names and values of `simpleIOGenericIO`), which is a fixture that does
+  not exist yet (the functional match of the example model, listed in `docs/interop.md`). Until both exist, D6 is not complete: the case of the
+  plan's "bench rows in both directions" is open for the reverse direction.
+- **The handshake**: the reference server requires the `str2` parameter CBB, which the client offers only under `--lenient-parameter-cbbs` (A7).
+- **Confidence**: high for the forward rows (the peer's own reports, decoded; the capture decodes); the reverse row is not evaluated.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

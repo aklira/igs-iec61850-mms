@@ -12,9 +12,12 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use igs_iec61850_mms::client::{ClientError, IecClient};
+use igs_iec61850_mms::client_report::{decode_report, UrcbWrite};
 use igs_iec61850_mms::model::client_config;
 use igs_iec61850_mms_core::discovery::{Definition, Leaf, Size};
 use igs_iec61850_mms_core::names::{MmsIdentifier, MmsName, Name, Scope};
+use igs_iec61850_mms_core::report::urcb::{OptionalFields, TriggerOptions};
+use igs_iso9506_mms::client::{Event, Events};
 use igs_iso9506_mms::Reconnect;
 use igs_iso9506_mms_codec::generated::types::Data;
 use igs_iso9506_mms_link::config::LinkConfig;
@@ -65,6 +68,27 @@ enum Command {
         item: String,
         value: String,
     },
+    /// The data sets of a logical device (the named variable lists of its domain).
+    Datasets { device: String },
+    /// Configures an unbuffered report control block of a logical node, enables it, and prints the reports it receives for a time.
+    /// The block reports the data set (`--data-set`, or the one it has), with the sequence number, the reasons and the data set name.
+    Report {
+        device: String,
+        node: String,
+        block: String,
+        /// The data set of the block.
+        #[arg(long)]
+        data_set: Option<String>,
+        /// Requests a general interrogation after the enabling (the reports carry the reason `general-interrogation`).
+        #[arg(long)]
+        gi: bool,
+        /// The integrity period in milliseconds (zero: no integrity reports).
+        #[arg(long, default_value_t = 0)]
+        integrity_ms: u32,
+        /// How long the reports are waited for, in seconds.
+        #[arg(long, default_value_t = 5)]
+        seconds: u64,
+    },
 }
 
 #[tokio::main]
@@ -100,14 +124,18 @@ async fn run(cli: Cli) -> Result<bool, Failure> {
     let mut config = client_config(LinkConfig::default());
     config.lenient_parameter_cbbs = cli.lenient_parameter_cbbs;
     config.reconnect = Reconnect::Never;
-    let (client, _events) = IecClient::connect(&cli.server, config).await?;
-    let outcome = execute(&client, cli.command).await;
+    let (client, mut events) = IecClient::connect(&cli.server, config).await?;
+    let outcome = execute(&client, &mut events, cli.command).await;
     // A server that is slow to conclude does not hold the command: the association is dropped after two seconds.
     let _ = tokio::time::timeout(Duration::from_secs(2), client.close()).await;
     outcome
 }
 
-async fn execute(client: &IecClient, command: Command) -> Result<bool, Failure> {
+async fn execute(
+    client: &IecClient,
+    events: &mut Events,
+    command: Command,
+) -> Result<bool, Failure> {
     match command {
         Command::Domains => {
             for domain in client.domains().await? {
@@ -175,7 +203,144 @@ async fn execute(client: &IecClient, command: Command) -> Result<bool, Failure> 
             }
             println!("{item} written");
         }
+        Command::Datasets { device } => {
+            for name in client.data_sets(&device).await? {
+                println!("{name}");
+            }
+        }
+        Command::Report {
+            device,
+            node,
+            block,
+            data_set,
+            gi,
+            integrity_ms,
+            seconds,
+        } => {
+            return report(
+                client,
+                events,
+                &device,
+                &node,
+                &block,
+                data_set,
+                gi,
+                integrity_ms,
+                seconds,
+            )
+            .await;
+        }
     }
+    Ok(true)
+}
+
+/// Configures, enables and reads a block; prints each report it receives, decoded. `Ok(true)` when at least one report came.
+#[allow(clippy::too_many_arguments)]
+async fn report(
+    client: &IecClient,
+    events: &mut Events,
+    device: &str,
+    node: &str,
+    block: &str,
+    data_set: Option<String>,
+    gi: bool,
+    integrity_ms: u32,
+    seconds: u64,
+) -> Result<bool, Failure> {
+    let values = client.urcb_values(device, node, block).await?;
+    println!(
+        "{} : enabled {}, reserved {}, data set {:?}, configuration revision {}",
+        values.rpt_id, values.enabled, values.reserved, values.data_set, values.conf_rev
+    );
+    let data_set = match data_set.or(values.data_set) {
+        Some(name) => name,
+        None => {
+            return Err(Failure::Usage(
+                "the block has no data set: give one with --data-set".to_string(),
+            ))
+        }
+    };
+    let options = OptionalFields {
+        seq_num: true,
+        reason_code: true,
+        data_set_name: true,
+        conf_rev: true,
+        ..Default::default()
+    };
+    let triggers = TriggerOptions {
+        data_change: !gi,
+        quality_change: !gi,
+        data_update: !gi,
+        integrity: integrity_ms > 0,
+        general_interrogation: gi,
+    };
+    let steps = [
+        UrcbWrite::Reserve(true),
+        UrcbWrite::DataSet(Some(data_set)),
+        UrcbWrite::OptFields(options),
+        UrcbWrite::TriggerOptions(triggers),
+        UrcbWrite::BufTm(0),
+        UrcbWrite::IntgPd(integrity_ms),
+        UrcbWrite::Enable(true),
+    ];
+    for step in steps {
+        if let Err(error) = client.urcb_write(device, node, block, step).await? {
+            println!("the block refuses a write: {error:?}");
+            return Ok(false);
+        }
+    }
+    if gi {
+        if let Err(error) = client
+            .urcb_write(device, node, block, UrcbWrite::GeneralInterrogation)
+            .await?
+        {
+            println!("the general interrogation is refused: {error:?}");
+            return Ok(false);
+        }
+    }
+    let mut received = 0usize;
+    let waiting = tokio::time::timeout(Duration::from_secs(seconds), async {
+        loop {
+            match events.next().await {
+                Some(Event::Report(service)) => {
+                    if let Some(decoded) = decode_report(&service) {
+                        received = received.saturating_add(1);
+                        println!(
+                            "report {} : sequence {:?}, data set {:?}, {} entries",
+                            decoded.rpt_id,
+                            decoded.sequence,
+                            decoded.data_set,
+                            decoded.entries.len()
+                        );
+                        for entry in &decoded.entries {
+                            println!(
+                                "  member {} {:?} : {} reasons {:?}",
+                                entry.index,
+                                entry.reference,
+                                show(&entry.value),
+                                entry.reasons
+                            );
+                        }
+                    }
+                }
+                Some(_) => continue,
+                None => break,
+            }
+        }
+    })
+    .await;
+    let _ = waiting;
+    let _ = client
+        .urcb_write(device, node, block, UrcbWrite::Enable(false))
+        .await;
+    let _ = client
+        .urcb_write(device, node, block, UrcbWrite::Reserve(false))
+        .await;
+    if received == 0 {
+        println!("no report was received in {seconds} s");
+        return Ok(false);
+    }
+    println!("{received} report(s) received");
     Ok(true)
 }
 
