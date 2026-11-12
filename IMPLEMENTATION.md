@@ -511,7 +511,7 @@ The agent does not wait for these; it records the impact and continues with what
 | P3 8-1 conformance and mapping data | [x] |
 | P4 ACSI conformance data | [ ] |
 | P5 IEC code components | [ ] |
-| P6 MMS modules with the 8-1 extensions | [ ] |
+| P6 MMS modules with the 8-1 extensions | [x] |
 | P7 TISSUE selection | [ ] |
 | F1 Workspace skeleton | [ ] |
 | F2 Continuous integration and ai-log | [ ] |
