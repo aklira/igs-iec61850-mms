@@ -17,10 +17,40 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 igs-iec61850-mms-core = { path = "../crates/igs-iec61850-mms-core", features = ["scl"] }
+# The bit strings of the report options are the codec's, as the crate uses them.
+igs-iso9506-mms-codec = { path = "../../igs-iso9506-mms/crates/igs-iso9506-mms-codec" }
 
 [[bin]]
 name = "scl_parse"
 path = "fuzz_targets/scl_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "scl_build"
+path = "fuzz_targets/scl_build.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "report_codec"
+path = "fuzz_targets/report_codec.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "urcb_events"
+path = "fuzz_targets/urcb_events.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "control_events"
+path = "fuzz_targets/control_events.rs"
 test = false
 doc = false
 bench = false

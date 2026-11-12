@@ -560,7 +560,7 @@ The agent does not wait for these; it records the impact and continues with what
 | G2 Proxy model, quality and controls | [x] |
 | V1 Capability statements | [ ] |
 | V2 Documentation, examples, binaries | [x] |
-| V3 Robustness and performance evidence | [ ] |
+| V3 Robustness and performance evidence | [x] |
 | R1 Legal review and release ⛔ | [ ] |
 
 Suggested order: P1, P3, P6, P5, F1, F2, F4, N1–N4 (M0), P2, P4, F3, A1–A7, S1–S3, D1 (M1), N5,

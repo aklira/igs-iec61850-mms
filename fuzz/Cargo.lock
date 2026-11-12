@@ -56,6 +56,7 @@ name = "igs-iec61850-mms-fuzz"
 version = "0.0.0"
 dependencies = [
  "igs-iec61850-mms-core",
+ "igs-iso9506-mms-codec",
  "libfuzzer-sys",
 ]
 

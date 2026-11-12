@@ -842,6 +842,18 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the examples and the documentation gate (they build and run); medium on the changelog's wording, which the maintainer
   should read before a release.
 
+### D-036 — Fuzz targets on the state machines, and the first measurements (task V3; §12.4)
+
+- **Fuzz targets**: the decoders of the report options and triggers are fuzzed with a round-trip assertion (the options and the triggers decode to
+  the same values after the encoder), because a decoder that accepts bytes it cannot produce is a defect of the encoding. The state machines of the
+  report block and of the control object are fed with event sequences decoded from the bytes; the clock only moves forward. The sequences check
+  that no input panics or breaks an invariant of the machine that is asserted; they do not check the answers, which the unit tests do.
+- **Duration**: one run of 60 seconds per target, recorded in `docs/ai-log/V3.md`. This meets the recorded-duration criterion of V3; it is not a
+  campaign.
+- **Measurements**: the method of `docs/measurements.md` (loopback, one item per read, the timing boundaries stated). Only the request throughput and
+  latency are measured; the report, buffer and transport items of §12.4 are listed as not measured, with no number.
+- **Confidence**: high on the targets (they build and run clean); medium on the measurements as a description of this machine only.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
