@@ -752,6 +752,28 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the privacy, the lifecycle of the association sets and the static protection (tests); medium for the choice that a
   persistent set has no owner (the standard leaves the access control to the implementation; to confirm with the peer in D6).
 
+### D-031 — The differences of the first edition that a client meets, and how the crate tells the editions apart (tasks E1, E2; ED1-001 to ED1-004)
+
+- **Inventory** (E1): the differences are listed in the private notes (`norm_preparation/docs/spec/edition1-inventory.md`), with their clause
+  sources (7-2 annex F, 8-1 annex K), their effect on a client, and their decision. The public repository holds only the decisions below, in our own
+  words. The differences that matter for the code: the additional causes 26 and 27 (their meanings are exchanged between the first and the second
+  edition, by the corrections of the tissues), the longer names (LD, LN, data object, object reference, control block name, `RptID`), the
+  deprecated and renamed services and enumerated values, and the attributes that the first edition adds (`Owner`, `ResvTms`).
+- **Detection** (E2, ED1-001): the edition of a device is read from its namespace string, `LLN0.NamPlt.ldNs` (FC EX): a string that carries the
+  2003 namespace is the first edition, one that carries the 2007 namespace is the second. Any other string gives no edition, which is never assumed
+  (`IecClient::detect_edition`, `client_control::edition_of_namespace`).
+- **Profile** (E2, ED1-004): the edition is a parameter of the reading of the causes (`termination_in(edition, report)`,
+  `cause_name_in(edition, value)`): the first edition exchanges the causes 26 and 27, and every other cause is the catalogue's. The default is the
+  second edition. No check is relaxed for a server of the second edition, and an unknown edition keeps the second edition's checks.
+- **Not done** (E3): an interop row with an Edition 1 peer. The reference peer of the bench is the second edition's example set; no first-edition
+  peer is available, and no capture from the user is recorded. The behaviours of the first edition are declared untested. The complete value table
+  of `ControlServiceStatusKind` for the first edition is not known: only 26 and 27 are changed by the annex, and the other causes are assumed equal.
+- **A correction found on the way** (A2, E2): the visible and the Unicode strings of a given maximum were described with a positive size, which MMS
+  reads as an exact length, so a value of any other length was refused. They are now variable lengths with the maximum, a negative size (ISO 9506-2
+  §14.2.2.4.2, as the reference peer describes them). The table test of A2 is updated.
+- **Confidence**: high for the codes and the detection of the namespace strings (tests with served devices); medium for the table of the causes of
+  the first edition beyond 26 and 27 (to confirm with a first-edition capture, E3).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
