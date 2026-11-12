@@ -508,7 +508,7 @@ The agent does not wait for these; it records the impact and continues with what
 | --- | --- |
 | P1 Prepared texts of 8-1 and 7-2 | [ ] |
 | P2 Prepared texts of 7-1 and 61850-6 | [ ] |
-| P3 8-1 conformance and mapping data | [ ] |
+| P3 8-1 conformance and mapping data | [x] |
 | P4 ACSI conformance data | [ ] |
 | P5 IEC code components | [ ] |
 | P6 MMS modules with the 8-1 extensions | [ ] |
