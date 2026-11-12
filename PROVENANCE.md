@@ -910,6 +910,17 @@ silent, to be confirmed by an observation test against other implementations.
   (`bench/tests/test_b2_buffered.py`). The reverse direction and the resumption against the peer are not tested.
 - **Confidence**: high on the layout (the peer's reports decode with it); medium on the segment budget, which is a choice of this release.
 
+### D-039 — The conformance drafts are written by hand, and the generation is open (task V1)
+
+- **Drafts**: `docs/conformance-drafts.md` holds the ACSI statement, the PICS, the MICS and the PIXIT as drafts for review. Each claim names its row of
+  `docs/capabilities.tsv`, and each PIXIT value is the default of the code, named by its constant.
+- **Why by hand**: the plan has `cargo xtask statements` write these drafts; the rows of the source carry the states and the tests, but not the
+  service table, the logical node list or the PIXIT values, which are text of the implementer. Generating them needs those inputs in the source first.
+  V1 stays open until the generation exists or the maintainer decides that the hand-written drafts are the deliverable.
+- **Not copied**: the tables of the standard's annexes (PICS, MICS, PIXIT forms) are not reproduced; the drafts use their own structure, which is
+  licensed text's free paraphrase of what the library does.
+- **Confidence**: high on the PIXIT values (read from the code); medium on the ACSI and MMS lists, which restate the rows and the dispatch.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
