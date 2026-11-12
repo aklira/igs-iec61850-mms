@@ -524,7 +524,7 @@ The agent does not wait for these; it records the impact and continues with what
 | N2 IEC 61850 MMS profile | [x] |
 | N3 Typed UtcTime, MMSString and TypeDescription | [x] |
 | N4 Alternate access towards the model | [x] |
-| N5 Observable outbound delivery | [ ] |
+| N5 Observable outbound delivery | [x] |
 | A1 Object references and MMS names | [ ] |
 | A2 ACSI types and their MMS mapping | [ ] |
 | A3 Server model | [ ] |
