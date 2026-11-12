@@ -523,7 +523,7 @@ The agent does not wait for these; it records the impact and continues with what
 | N1 Generator input and codec union | [x] |
 | N2 IEC 61850 MMS profile | [x] |
 | N3 Typed UtcTime, MMSString and TypeDescription | [x] |
-| N4 Alternate access towards the model | [ ] |
+| N4 Alternate access towards the model | [x] |
 | N5 Observable outbound delivery | [ ] |
 | A1 Object references and MMS names | [ ] |
 | A2 ACSI types and their MMS mapping | [ ] |
