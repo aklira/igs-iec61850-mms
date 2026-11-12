@@ -648,6 +648,34 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the state machine (figures and clauses of K1, the sequence correction read from 7-2 §20.5.2); medium for the table 100
   mapping (the complete table is missing from the prepared text); to confirm with a reference client in D6 and K3.
 
+### D-027 — Deferred outcomes and the typed control API (task K3; CTL-003, CTL-004, ACSI-001)
+
+- **Deferred outcome** (CTL-003, the extension the requirement asks for): the machine takes `Event::Deferred { outcome }`. For an enhanced command
+  that waits for the change of its status (the state `Change`), a positive outcome completes it as a change does, and a negative one terminates it
+  with its cause (CommandTermination negative, with the additional cause), and ends the selection (7-2 §20.5). In another state the event is
+  ignored.
+- **The application's path** (`ControlHandle`): `ServedModel::control_handle()`; `complete(reference, outcome)` queues the outcome, and the next poll of
+  the model applies it. A reference that is not a control object of the model is refused (`ControlError::UnknownObject`), so an outcome is never
+  silently lost. The handle can be used from another task.
+- **Not deferred**: the checks. A write response of MMS is given by `Model::dispatch`, which answers at once. A check that the application cannot
+  answer at once therefore has no place in this release: the handler answers from its cached state, and must not block (CTL-003). A deferred
+  response of a write would need the MMS server to answer later (a change of the MMS layer, not of this task). The deferred outcome of the command
+  is the path that is implemented.
+- **Typed client API** (`client_control`): `select` (a read of SBO: `Some(reference)` or `None`), `select_with_value`, `operate`, `cancel` (writes of
+  the structure of table 94, with a `Command`: control value, originator, control number, test flag, checks; the time is the zero timestamp, which the
+  server does not check). `termination(report)` decodes a CommandTermination (on `Oper`) or a LastApplError (table 109) from the reports of the
+  association; `cause_name` gives the name of an additional cause from the catalogue.
+- **CTL-004 cases tested**: the wrong client (competing clients refused), the invalid transition (an operate without selection refused), the cancel,
+  the disconnection (the selection of a closed association released), the asynchronous failure (a deferred negative outcome), and the timeout of an
+  enhanced operate (the operate timeout). The expired selection (the select timeout) is tested at the state machine (K1).
+- **Test**: `igs-iec61850-mms/tests/controls_client.rs` (8 tests, feature `scl`: the select-before-operate object through the typed API, competing
+  clients, cancel, the deferred positive and negative outcomes decoded, the operate timeout, an unknown object refused by the handle, and a report that is
+  not a termination not decoded); `igs-iec61850-mms-core/tests/control.rs` (two new tests of the deferred event).
+- **Not run here**: the interoperability with the reference peer (the controls of the bench, AT-11 with the peer): it needs the bench containers of F4 and
+  is left to D6 and the bench campaign (the plan's "and with the peer").
+- **Confidence**: high for the state transitions (tests) and the decoding (vectors built from the reports of the tests); medium for the
+  reading that the outcome of a deferred command is the CommandTermination of the enhanced models only (the normal models do not terminate, as K1 states).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

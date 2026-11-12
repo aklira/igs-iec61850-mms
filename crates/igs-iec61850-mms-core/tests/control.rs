@@ -993,3 +993,56 @@ fn a_model_of_a_ctl_model_value_is_read_and_the_status_only_has_none() {
     assert_eq!(SboClass::from_value(1), Some(SboClass::OperateMany));
     assert_eq!(Behaviour::from_value(4), Some(Behaviour::TestBlocked));
 }
+
+#[test]
+fn a_deferred_negative_outcome_terminates_the_waiting_command_with_its_cause() {
+    // CTL-003: an enhanced command waits for the change of its status; the application can report a deferred outcome instead.
+    let mut object = ControlObject::new(config(
+        ControlModel::DirectEnhanced,
+        SboClass::OperateOnce,
+        Behaviour::On,
+    ));
+    object.handle(at(0), request(ALICE, Service::Operate, Some(value(true))));
+    object.handle(at(1), ok());
+    object.handle(at(2), ok());
+    let actions = object.handle(
+        at(3),
+        Event::Deferred {
+            outcome: Err(AddCause::BLOCKED_BY_INTERLOCKING),
+        },
+    );
+    assert!(
+        has(
+            &actions,
+            &Action::Terminate {
+                client: ALICE,
+                outcome: Err(AddCause::BLOCKED_BY_INTERLOCKING),
+            }
+        ),
+        "{actions:?}"
+    );
+    assert_eq!(object.state(), State::Idle);
+}
+
+#[test]
+fn a_deferred_positive_outcome_completes_the_command_as_a_change_does() {
+    let mut object = ControlObject::new(config(
+        ControlModel::DirectEnhanced,
+        SboClass::OperateOnce,
+        Behaviour::On,
+    ));
+    object.handle(at(0), request(ALICE, Service::Operate, Some(value(true))));
+    object.handle(at(1), ok());
+    object.handle(at(2), ok());
+    let actions = object.handle(at(3), Event::Deferred { outcome: Ok(()) });
+    assert!(
+        has(
+            &actions,
+            &Action::Terminate {
+                client: ALICE,
+                outcome: Ok(()),
+            }
+        ),
+        "{actions:?}"
+    );
+}

@@ -262,6 +262,12 @@ pub enum Event {
     },
     /// The status of the controlled object has reached the demanded value.
     Changed,
+    /// The outcome of the command, reported by the application when it does not come as a change of status (CTL-003): the
+    /// deferred outcome of an enhanced command that waits for the change (a negative one carries its cause).
+    Deferred {
+        /// The outcome: `Ok` completes the command as a change does.
+        outcome: Result<(), AddCause>,
+    },
     /// A timer that the machine armed has expired.
     Timer(Timer),
     /// The behaviour of the logical node changed.

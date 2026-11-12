@@ -163,6 +163,7 @@ impl ControlObject {
             } => self.request(now, service, parameters),
             Event::Verdict { ok, cause } => self.verdict(now, ok, cause),
             Event::Changed => self.changed(now),
+            Event::Deferred { outcome } => self.deferred(now, outcome),
             Event::Timer(timer) => self.timer(now, timer),
             Event::Behaviour(behaviour) => {
                 self.config.behaviour = behaviour;
@@ -592,6 +593,33 @@ impl ControlObject {
             });
         } else {
             self.finish(now, actions);
+        }
+    }
+
+    /// The outcome of a command that the application reports, when it is not a change of status (CTL-003): a positive outcome
+    /// completes the command as a change does; a negative one terminates it with its cause, and the selection ends.
+    fn deferred(&mut self, now: Duration, outcome: Result<(), AddCause>) -> Vec<Action> {
+        if self.state != State::Change {
+            return Vec::new();
+        }
+        match outcome {
+            Ok(()) => self.changed(now),
+            Err(cause) => {
+                let Some(pending) = self.pending.take() else {
+                    return Vec::new();
+                };
+                let mut actions = vec![
+                    Action::Terminate {
+                        client: pending.client,
+                        outcome: Err(cause),
+                    },
+                    Action::Disarm {
+                        timer: Timer::Operate,
+                    },
+                ];
+                self.finish(now, &mut actions);
+                actions
+            }
         }
     }
 

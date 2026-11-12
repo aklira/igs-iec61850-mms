@@ -23,6 +23,7 @@
 //! response; the standard puts it before. The client matches it with the origin and the control number.
 
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use igs_iec61850_mms_core::acsi::{
@@ -98,11 +99,15 @@ struct Object {
     operation: Option<Operation>,
 }
 
+/// The outcomes that the application reports for the commands, as (reference of the object, outcome).
+type Completions = Arc<Mutex<Vec<(String, Result<(), AddCause>)>>>;
+
 /// The controls of a served model.
 pub(crate) struct Controls {
     objects: Vec<Object>,
     handler: Box<dyn ControlHandler>,
     outbox: VecDeque<Outbound>,
+    completions: Completions,
 }
 
 /// What a control item of a request is: an object, and the component that the request names.
@@ -120,6 +125,7 @@ impl Controls {
             objects: Vec::new(),
             handler,
             outbox: VecDeque::new(),
+            completions: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -377,8 +383,39 @@ impl Controls {
         });
     }
 
-    /// One poll: the expired timers, the status changes that the machines wait for, and the reports to send.
+    /// The handle of the outcomes of the commands, for the application (K3).
+    pub(crate) fn handle(&self) -> ControlHandle {
+        ControlHandle::new(self.references(), Arc::clone(&self.completions))
+    }
+
+    /// The references of the control objects, in order.
+    pub(crate) fn references(&self) -> Vec<String> {
+        self.objects
+            .iter()
+            .map(|object| object.reference.clone())
+            .collect()
+    }
+
+    /// One poll: the outcomes that the application reported, the expired timers, the status changes that the machines wait
+    /// for, and the reports to send.
     pub(crate) fn poll(&mut self, now: Duration, changed: &[String]) -> Vec<Outbound> {
+        let reported: Vec<(String, Result<(), AddCause>)> = match self.completions.lock() {
+            Ok(mut queue) => queue.drain(..).collect(),
+            Err(_) => Vec::new(),
+        };
+        for (reference, outcome) in reported {
+            if let Some(index) = self
+                .objects
+                .iter()
+                .position(|object| object.reference == reference)
+            {
+                let actions = match self.object(index) {
+                    Some(object) => object.machine.handle(now, Event::Deferred { outcome }),
+                    None => Vec::new(),
+                };
+                self.run(now, index, actions);
+            }
+        }
         for index in 0..self.objects.len() {
             while let Some((timer, _)) = self.take_due(index, now) {
                 let actions = match self.object(index) {
@@ -422,6 +459,62 @@ impl Controls {
             };
             self.run(now, index, actions);
         }
+    }
+}
+
+/// The handle of the application to the outcomes of the commands: a deferred outcome completes the command that waits for it
+/// (CTL-003). It is cheap to clone and safe to use from other tasks; the outcome is applied at the next poll of the model.
+#[derive(Clone)]
+pub struct ControlHandle {
+    references: Vec<String>,
+    completions: Completions,
+}
+
+/// Why an outcome is not accepted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ControlError {
+    /// The served model has no control object of this reference (`LD/LN$CO$DO`).
+    UnknownObject(String),
+    /// The state of the controls is unavailable: a task that held its lock failed.
+    Poisoned,
+}
+
+impl std::fmt::Display for ControlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownObject(reference) => write!(f, "there is no control object {reference}"),
+            Self::Poisoned => write!(f, "the state of the controls is unavailable"),
+        }
+    }
+}
+
+impl std::error::Error for ControlError {}
+
+impl ControlHandle {
+    pub(crate) fn new(references: Vec<String>, completions: Completions) -> Self {
+        Self {
+            references,
+            completions,
+        }
+    }
+
+    /// The outcome of the command of the object `reference` (`LD/LN$CO$DO`), when it does not come as a change of status:
+    /// `Ok` completes the command, `Err` terminates it with its cause (CTL-003).
+    pub fn complete(
+        &self,
+        reference: &str,
+        outcome: Result<(), AddCause>,
+    ) -> Result<(), ControlError> {
+        if !self.references.iter().any(|known| known == reference) {
+            return Err(ControlError::UnknownObject(reference.to_string()));
+        }
+        let mut queue = self
+            .completions
+            .lock()
+            .map_err(|_| ControlError::Poisoned)?;
+        queue.push((reference.to_string(), outcome));
+        Ok(())
     }
 }
 

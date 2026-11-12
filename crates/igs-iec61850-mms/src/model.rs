@@ -19,7 +19,7 @@ use igs_iec61850_mms_core::model::layout::{
 };
 use igs_iec61850_mms_core::model::{ModelError, ServerModel};
 
-use crate::control::{AcceptAll, ControlHandler, Controls};
+use crate::control::{AcceptAll, ControlHandle, ControlHandler, Controls};
 #[cfg(feature = "scl")]
 use crate::reports::{Block, Wire};
 use crate::reports::{ReportState, Reports};
@@ -371,6 +371,11 @@ impl ServedModel {
     /// The handle of the reports of the model: the application writes to the unbuffered blocks through it (task D4).
     pub fn reports(&self) -> Reports {
         Reports::new(Arc::clone(&self.reports))
+    }
+
+    /// The handle of the outcomes of the commands: the application reports the deferred outcome of a command through it (K3).
+    pub fn control_handle(&self) -> ControlHandle {
+        self.controls.handle()
     }
 
     /// The checks and the execution of the controls are the application's: `handler` makes them (task K2, CTL-003).
