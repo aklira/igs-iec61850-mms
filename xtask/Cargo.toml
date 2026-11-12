@@ -13,3 +13,5 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+# roxmltree: read-only XML tree for the NSD files (task F3, MIT OR Apache-2.0, no dependency; DTDs refused).
+roxmltree = "0.21"

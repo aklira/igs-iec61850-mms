@@ -13,12 +13,23 @@
 
 use std::process::ExitCode;
 
+mod catalogue;
+
 const USAGE: &str = "usage: cargo xtask <catalogue | statements> [--check]";
 
 fn main() -> ExitCode {
     let command = std::env::args().nth(1);
     match command.as_deref() {
-        Some("catalogue") => not_yet("catalogue", "F3"),
+        Some("catalogue") => {
+            let check = std::env::args().nth(2).as_deref() == Some("--check");
+            match catalogue::run(&catalogue::workspace_root(), check) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("cargo xtask catalogue: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Some("statements") => not_yet("statements", "V1"),
         _ => {
             eprintln!("{USAGE}");

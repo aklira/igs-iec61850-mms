@@ -518,7 +518,7 @@ The agent does not wait for these; it records the impact and continues with what
 | P7 TISSUE selection | [x] |
 | F1 Workspace skeleton | [x] |
 | F2 Continuous integration and ai-log | [x] |
-| F3 Catalogue generation | [ ] |
+| F3 Catalogue generation | [x] |
 | F4 Interop bench skeleton | [ ] |
 | N1 Generator input and codec union | [ ] |
 | N2 IEC 61850 MMS profile | [ ] |
