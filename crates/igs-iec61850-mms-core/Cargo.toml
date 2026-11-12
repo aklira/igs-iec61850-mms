@@ -15,6 +15,8 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+# The MMS codec of igs-iso9506-mms: the MMS values and type descriptions the ACSI types map to (task A2).
+igs-iso9506-mms-codec = { path = "../../../igs-iso9506-mms/crates/igs-iso9506-mms-codec", version = "1.1.0" }
 
 [dev-dependencies]
 # proptest: the property tests of the names and the references (task A1), as in the MMS codec (MIT or Apache-2.0).

@@ -101,6 +101,46 @@ silent, to be confirmed by an observation test against other implementations.
 - **Licence**: `proptest` (MIT or Apache-2.0) is a development dependency of `igs-iec61850-mms-core` only; it is not
   published with the library.
 
+### D-004 — ACSI basic and common types and their MMS mapping (task A2)
+
+- **Decision**: the module `acsi` maps each row of the basic types (8-1 Table 15) and the common types (quality,
+  check conditions, originator, timestamp) to MMS values and type descriptions, and reads them back with a typed
+  `AcsiError` for each refusal. Reading never changes a value silently.
+  - **Enumerations**: a standardised value, an extension (non-negative, not standardised, in the integer range) and a
+    private value (negative) are three readings, and only the first is named. An extension is not an error
+    (§8.1.2.2). The type description is the signed integer that holds the largest standardised value: its bits plus
+    one for the sign, at least one bit (`describe_enumeration`).
+  - **Coded enumerations**: the size is the number of bits of the largest standardised value (`coded_enum_size`),
+    never zero (§8.1.2.1). The value is written most significant bit first (bit 0 of the bit string is the MSB).
+  - **Bit strings, reading**: the bits past the size of the type are ignored and the missing ones take zero, as the
+    first point of §8.1.2.1 says. **Writing**: the exact size is written, never a longer string, and the padding bits
+    are zero.
+  - **Strings**: a visible string is in the ISO 646 set and has at most the limit in characters (§8.1.2.5); a Unicode
+    string has at most the limit in characters, not octets (§8.1.2.6, RFC 3629 serialization); an octet string has
+    at most the limit in octets (§8.1.2.4). These are refused when longer, unlike the bit strings above.
+  - **FLOAT32**: only the single precision form (format width 32, exponent width 8) is accepted; another form is
+    another type.
+  - **Quality**: 13 bits in the order of Table 44 (validity in bits 0 and 1 as a coded value, detail bits 2 to 9,
+    source bit 10, test bit 11, operator blocked bit 12). **CheckConditions**: 2 bits of Table 43. **Originator**: a
+    structure of `orCat` (the enumeration `OriginatorCategoryKind`) and `orIdent` (at most 64 octets), in the order of
+    the catalogue (§8.1.3.17 only says "structure").
+  - **Timestamp**: an UtcTime of eight octets, with the time quality of N3; an invalid quality is refused (§8.1.3.7).
+- **Conflict in the standard**: the normative point of §8.1.2.1 ignores the extra bits of a longer bit string, but
+  the NOTE of the same clause says that writing a longer bit string is `object-value-invalid`. The module follows the
+  normative point when reading and never sends a longer string, so the NOTE is met on the sending side. Strings are
+  refused when longer, which is the NOTE's rule for them.
+- **Sources**: IEC 61850-8-1 Table 15, §8.1.2.1 to §8.1.2.6, §8.1.3.7, §8.1.3.17, §8.2 and Tables 43 and 44,
+  Annex F.3.1 (UtcTime); IEC 61850-7-2 for the enumerations and the Originator components.
+- **Confidence**: high for the string limits, the Quality and CheckConditions positions (each bit has a vector test),
+  and the Timestamp mapping; medium for the enumeration size, since it is read literally as the minimum signed
+  integer; medium for the reading of the bit strings, because of the conflict above. Each medium point can be changed
+  in one function, and the vectors show the effect.
+- **Test**: 20 unit tests in `acsi.rs`: a vector per row of Table 15, the bit positions of Tables 43 and 44, the
+  coded enumeration bit order, the malformed values (zero size, bit strings of no bit, out-of-range integers, bad
+  characters, too long strings, wrong MMS type, invalid time quality, short floats).
+- **Not decided here**: the data model that uses these types (A3, A4); the conformance of the enumerations to the
+  catalogue values beyond the classification.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

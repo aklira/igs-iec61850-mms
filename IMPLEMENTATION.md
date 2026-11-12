@@ -526,7 +526,7 @@ The agent does not wait for these; it records the impact and continues with what
 | N4 Alternate access towards the model | [x] |
 | N5 Observable outbound delivery | [x] |
 | A1 Object references and MMS names | [x] |
-| A2 ACSI types and their MMS mapping | [ ] |
+| A2 ACSI types and their MMS mapping | [x] |
 | A3 Server model | [ ] |
 | A4 Server data access | [ ] |
 | A5 Application event path and clock source | [ ] |

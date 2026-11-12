@@ -21,6 +21,7 @@
     )
 )]
 
+pub mod acsi;
 pub mod catalogue;
 
 pub mod names;
