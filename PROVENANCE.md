@@ -885,6 +885,31 @@ silent, to be confirmed by an observation test against other implementations.
 - **Tests**: `igs-iec61850-mms-core/tests/report_buffered.rs`, fifteen deterministic tests (disconnect, resumption, overflow, resynchronisation, purge,
   refusals, integrity, sequence numbers, the last `EntryID`).
 
+### D-038 — The buffered reports: the wire layout, the values of the entries, the owner, and the segments (task B2; BRCB-002, BRCB-003)
+
+- **Wire layout**: the results follow IEC 61850-8-1 table 74 (RptID, OptFlds, SeqNum, TimeOfEntry, DatSet, BufOvfl, EntryID, ConfRev, SubSeqNum,
+  MoreSegmentsFollow, the inclusion bit string, the data references, the values, the reasons). 7-2 table 73 lists the parameters in another order,
+  and does not list the inclusion bit string, which 8-1 requires in every report. The decoder follows the table of the wire. The first attempt
+  against the reference server failed on this order, and the failure is the evidence for the choice (matrix C2 of `docs/interop.md`).
+- **Inclusion bit string**: one bit per variable of the data set; a segment sets the bits of its own variables. The decoder reads the number of
+  values from the set bits, not from the length of the list.
+- **Values of the entries**: an entry keeps the value of each of its variables at the moment it is made: the update carries the written value in
+  its notice, the block keeps the last value notified of each variable, and an entry takes those values (`Action::Entered`). This closes the gap of
+  B1 (D-037), where the report read the values when it was formatted.
+- **Owner**: the association that enabled the block, set before the reports of the enabling are formatted and cleared when the block is disabled
+  or the association is lost. The reports go to the owner only (RPT-003).
+- **Segments**: a report with the segmentation option is split into segments of at most 4096 estimated octets (a conservative count of each value's
+  encoding); each segment has the same sequence number, its own subsequence number, and `MoreSegmentsFollow` on all but the last. The negotiated
+  PDU size is not read by this release, so the budget is an estimate, not the limit of the association. Without the option the report is one segment.
+  The unit tests cover the split; no end-to-end test builds a report of that size.
+- **Configuration from SCL**: a buffered `ReportControl` is built into `Configuration::buffered` (with `bufOvfl` and `entryID` from its `OptFields`).
+  The segmentation option is not in the SCL: the client sets it.
+- **Not in this release**: the general interrogation and the reservation (`ResvTms`, `Owner` as a reservation) of the buffered blocks; the history
+  is bounded by a fixed capacity of 256 entries and is not trimmed by the standard's entry lifecycle, which the standard leaves to the server.
+- **Interop**: the reference server's buffered integrity reports decode without an error in tshark, and our client receives them in order
+  (`bench/tests/test_b2_buffered.py`). The reverse direction and the resumption against the peer are not tested.
+- **Confidence**: high on the layout (the peer's reports decode with it); medium on the segment budget, which is a choice of this release.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

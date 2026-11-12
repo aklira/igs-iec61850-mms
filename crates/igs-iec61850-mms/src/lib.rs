@@ -20,6 +20,7 @@
     )
 )]
 
+mod buffered;
 pub mod model;
 pub mod reports;
 
@@ -28,6 +29,7 @@ pub mod control;
 pub mod updates;
 
 pub mod client;
+pub mod client_buffered;
 pub mod client_control;
 pub mod client_dataset;
 pub mod client_report;

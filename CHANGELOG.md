@@ -26,12 +26,17 @@ All notable changes to this project are recorded in this file. The format follow
   the downstream outcome.
 - Editions: detection of the edition from the namespace of the device, and the additional causes 26 and 27 read as the
   first edition exchanges them.
-- Command line client (`igs61850-client`) and demonstration server (`igs61850-server`); examples for the client, the
-  server and the gateway.
+- Buffered reports: the buffered block as a state machine with a bounded history, its purge, its overflow flag and the
+  resynchronisation to an entry after a lost association; the server serves the blocks declared in SCL, with the values
+  of each entry kept with it, the wire layout of 8-1 table 74, delivery to the owner, and segmentation; the client reads,
+  writes and decodes them (`client_buffered`).
+- Command line client (`igs61850-client`, with `report` and `buffered`) and demonstration server (`igs61850-server`);
+  examples for the client, the server and the gateway.
 
 ### Not implemented
 
-- Buffered report control blocks (history, purge, overflow, resynchronisation): refused.
+- Buffered reports: the general interrogation and the reservation of a buffered block; the reverse direction against the
+  reference client, and the resumption against the reference server (see `docs/interop.md`).
 - Time-activated operate, and the security matrix (optional groups): refused or not provided.
 - Embedded SNTP and PTP: the host clock with its declared quality is used.
 - Edition 1 interoperability is not tested against a peer yet.

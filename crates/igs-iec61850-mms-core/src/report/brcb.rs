@@ -22,9 +22,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::Duration;
 
-use super::urcb::{
-    Config, Entry, OptionalFields, Reason, ReportKind, Timer, Trigger, TriggerOptions,
-};
+use super::urcb::{Entry, Reason, ReportKind, Timer, Trigger, TriggerOptions};
 use crate::control::ClientId;
 
 /// An entry identifier (`EntryID`). The value zero is the NULL identifier, reserved for an empty buffer and for the resynchronisation
@@ -40,6 +38,51 @@ impl EntryId {
     pub fn is_null(self) -> bool {
         self.0 == 0
     }
+}
+
+/// The optional fields of a buffered report (table 41 of 8-1, with the bits of the buffered block: buffer overflow, entry identifier and
+/// segmentation as well as the fields of the unbuffered one).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BufferedFields {
+    /// `seq-num`: the sequence number is included.
+    pub seq_num: bool,
+    /// `report-time-stamp`: the time of entry is included.
+    pub time_stamp: bool,
+    /// `reason-for-inclusion`: the reasons are included.
+    pub reason_code: bool,
+    /// `data-set-name`: the data set is included.
+    pub data_set_name: bool,
+    /// `data-reference`: the reference of each value is included.
+    pub data_ref: bool,
+    /// `buffer-overflow`: `BufOvfl` is included.
+    pub buf_ovfl: bool,
+    /// `entryID`: the entry identifier is included.
+    pub entry_id: bool,
+    /// `conf-revision`: the configuration revision is included.
+    pub conf_rev: bool,
+    /// `segmentation`: the subsequence number and `MoreSegmentsFollow` are included.
+    pub segmentation: bool,
+}
+
+/// The configuration of a buffered block (table 70).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Config {
+    /// The report identifier (`RptID`).
+    pub rpt_id: String,
+    /// The data set, by name; `None` is the NULL value.
+    pub data_set: Option<String>,
+    /// The data sets that exist in the logical node, with their numbers of members.
+    pub data_sets: BTreeMap<String, usize>,
+    /// The optional fields of the reports.
+    pub opt_flds: BufferedFields,
+    /// The buffer time (zero: each notification is one entry).
+    pub buf_tm: Duration,
+    /// The integrity period (zero: no integrity entries).
+    pub intg_pd: Duration,
+    /// The trigger options.
+    pub trg_ops: TriggerOptions,
+    /// The configuration revision.
+    pub conf_rev: u32,
 }
 
 /// The state of a buffered block (figure 26).
@@ -77,7 +120,7 @@ pub enum Write {
     /// `DatSet`: the data set, or `None` for the NULL value (a change purges the buffer).
     DataSet(Option<String>),
     /// `OptFlds` (refused while enabled).
-    OptFields(OptionalFields),
+    OptFields(BufferedFields),
     /// `BufTm` (a change purges the buffer).
     BufTm(Duration),
     /// `TrgOps` (a change purges the buffer).
@@ -166,6 +209,14 @@ pub enum Action {
     },
     /// Disarm a timer.
     Disarm(Timer),
+    /// An entry was made: the caller reads the members now and keeps their values with the entry. A notification or an integrity entry
+    /// carries the values of its moment, not those of the report (D-037).
+    Entered {
+        /// The identifier of the entry.
+        id: EntryId,
+        /// The members of the entry, in the order of the data set.
+        members: Vec<usize>,
+    },
 }
 
 /// The window of buffer time that collects the notifications of one entry.
@@ -228,6 +279,21 @@ impl Brcb {
     /// The state of the block.
     pub fn state(&self) -> State {
         self.state
+    }
+
+    /// The configuration of the block.
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    /// Whether the block is enabled (`RptEna`).
+    pub fn is_enabled(&self) -> bool {
+        self.state == State::Enabled
+    }
+
+    /// The sequence number of the next report (`SqNum`).
+    pub fn sequence(&self) -> u16 {
+        self.sequence
     }
 
     /// The entries of the history, the oldest first.
@@ -520,6 +586,7 @@ impl Brcb {
         }
         let id = EntryId(self.next_id);
         self.next_id = self.next_id.saturating_add(1);
+        let listed: Vec<usize> = members.keys().copied().collect();
         let entries = members
             .into_iter()
             .map(|(member, reasons)| Entry { member, reasons })
@@ -530,6 +597,10 @@ impl Brcb {
             kind,
             entries,
         });
+        let mut actions = vec![Action::Entered {
+            id,
+            members: listed,
+        }];
         while self.queue.len() > self.capacity {
             let Some(oldest) = self.queue.pop_front() else {
                 break;
@@ -540,7 +611,8 @@ impl Brcb {
                 self.pointer = oldest.id.0.saturating_add(1);
             }
         }
-        self.transmit(now)
+        actions.extend(self.transmit(now));
+        actions
     }
 
     /// While enabled, formats every entry that is not yet sent, in the order of the history.

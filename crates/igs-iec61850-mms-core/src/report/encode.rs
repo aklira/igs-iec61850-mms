@@ -12,11 +12,13 @@
 //! The unbuffered block reports neither the buffer overflow nor the entry identifier, and no segmentation: those option bits
 //! are always zero in the reported options (8-1 table 73 and 17.2.5.2).
 
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use igs_iso9506_mms_codec::generated::types::{Data, TimeOfDay};
 use igs_iso9506_mms_codec::schema::BitString;
 
+use super::brcb::{BufferedFields, EntryId};
 use super::urcb::{OptionalFields, Reason, Report, TriggerOptions};
 
 /// The variable name of the report in the MMS PDU: the VMD-specific list `RPT` (8-1 17.2.1).
@@ -276,4 +278,144 @@ fn bits(length: usize, set: impl Iterator<Item = usize>) -> BitString {
     }
     let unused = u8::try_from(octets.saturating_mul(8).saturating_sub(length)).unwrap_or(0);
     BitString { unused, bytes }
+}
+
+/// The options of a buffered report as a bit string (table 41 with the buffered bits): the unbuffered bits of
+/// [`optional_fields_bits`], plus buffer overflow (6), entry identifier (7) and segmentation (9).
+pub fn buffered_optional_fields_bits(fields: BufferedFields) -> BitString {
+    let mut set = Vec::new();
+    for (on, position) in [
+        (fields.seq_num, 1),
+        (fields.time_stamp, 2),
+        (fields.reason_code, 3),
+        (fields.data_set_name, 4),
+        (fields.data_ref, 5),
+        (fields.buf_ovfl, 6),
+        (fields.entry_id, 7),
+        (fields.conf_rev, 8),
+        (fields.segmentation, 9),
+    ] {
+        if on {
+            set.push(position);
+        }
+    }
+    bits(10, set.into_iter())
+}
+
+/// The options of a buffered report from a bit string: the inverse of [`buffered_optional_fields_bits`].
+pub fn buffered_fields_from_bits(bits: &BitString) -> BufferedFields {
+    BufferedFields {
+        seq_num: bits.bit(1),
+        time_stamp: bits.bit(2),
+        reason_code: bits.bit(3),
+        data_set_name: bits.bit(4),
+        data_ref: bits.bit(5),
+        buf_ovfl: bits.bit(6),
+        entry_id: bits.bit(7),
+        conf_rev: bits.bit(8),
+        segmentation: bits.bit(9),
+    }
+}
+
+/// One value of an entry: the reference of the data attribute, its value at the time of the entry, and the reasons of its member.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BufferedVariable {
+    /// The position of the variable in the data set (it is the bit of the inclusion bit string).
+    pub position: usize,
+    /// The object reference of the data attribute (see [`object_reference`]).
+    pub reference: String,
+    /// The value, as it was when the entry was made.
+    pub value: Data,
+    /// The reasons for the inclusion of the member.
+    pub reasons: BTreeSet<Reason>,
+}
+
+/// What a buffered report segment is built from (table 73 of 7-2).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BufferedContent<'a> {
+    /// The report identifier (`RptID`). When empty, the reference of the block is reported instead.
+    pub rpt_id: &'a str,
+    /// The object reference of the block, used when the identifier is empty.
+    pub block_reference: &'a str,
+    /// The name of the data set.
+    pub data_set: &'a str,
+    /// The configuration revision.
+    pub conf_rev: u32,
+    /// The options of the report.
+    pub opt_flds: BufferedFields,
+    /// The sequence number of the report (`SqNum`).
+    pub sequence: u16,
+    /// The subsequence number of this segment (`SubSqNum`), used when the report is segmented.
+    pub sub_sequence: u16,
+    /// Whether more segments of the same report follow (`MoreSegmentsFollow`).
+    pub more_segments: bool,
+    /// Whether entries may have been lost before this report (`BufOvfl`).
+    pub buf_ovfl: bool,
+    /// The time at which the entry was made (`TimeOfEntry`).
+    pub time_of_entry: Duration,
+    /// The identifier of the entry (`EntryID`).
+    pub entry_id: EntryId,
+    /// The number of variables of the data set: the length of the inclusion bit string.
+    pub variable_count: usize,
+    /// The values of this segment, in the order of the data set.
+    pub variables: &'a [BufferedVariable],
+}
+
+/// The results of an `InformationReport` for a segment of a buffered report, in the wire order of IEC 61850-8-1 table 74: the identifier,
+/// the options, then the fields the options select (the sequence number, the time of entry, the data set, the overflow flag, the entry
+/// identifier, the configuration revision, the subsequence number and `MoreSegmentsFollow`), then the inclusion bit string, the data
+/// references, the values and the reasons.
+///
+/// The wire order differs from the parameter order of IEC 61850-7-2 table 73 (the time of entry comes before the data set, and the
+/// inclusion bit string, which 8-1 requires in every report, is not in table 73); the standard's table of the wire is followed here.
+pub fn buffered_information_report(content: &BufferedContent<'_>) -> Vec<Data> {
+    let fields = content.opt_flds;
+    let mut results = Vec::new();
+    results.push(Data::VisibleString(if content.rpt_id.is_empty() {
+        content.block_reference.to_string()
+    } else {
+        content.rpt_id.to_string()
+    }));
+    results.push(Data::BitString(buffered_optional_fields_bits(fields)));
+    if fields.seq_num {
+        results.push(Data::Unsigned(u128::from(content.sequence)));
+    }
+    if fields.time_stamp {
+        results.push(Data::BinaryTime(binary_time(content.time_of_entry)));
+    }
+    if fields.data_set_name {
+        results.push(Data::VisibleString(content.data_set.to_string()));
+    }
+    if fields.buf_ovfl {
+        results.push(Data::Boolean(content.buf_ovfl));
+    }
+    if fields.entry_id {
+        results.push(Data::OctetString(content.entry_id.0.to_be_bytes().to_vec()));
+    }
+    if fields.conf_rev {
+        results.push(Data::Unsigned(u128::from(content.conf_rev)));
+    }
+    if fields.segmentation {
+        results.push(Data::Unsigned(u128::from(content.sub_sequence)));
+        results.push(Data::Boolean(content.more_segments));
+    }
+    results.push(Data::BitString(bits(
+        content.variable_count,
+        content.variables.iter().map(|variable| variable.position),
+    )));
+    if fields.data_ref {
+        for variable in content.variables {
+            results.push(Data::VisibleString(variable.reference.clone()));
+        }
+    }
+    for variable in content.variables {
+        results.push(variable.value.clone());
+    }
+    if fields.reason_code {
+        for variable in content.variables {
+            let reasons: Vec<Reason> = variable.reasons.iter().copied().collect();
+            results.push(Data::BitString(reason_bits(&reasons)));
+        }
+    }
+    results
 }

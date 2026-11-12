@@ -122,6 +122,8 @@ pub(crate) const NOTICE_LIMIT: usize = 65_536;
 pub(crate) struct Notice {
     pub(crate) name: String,
     pub(crate) changed: bool,
+    /// The value that the update wrote: an entry of a buffered block keeps the value of its change, not a later one.
+    pub(crate) value: Data,
 }
 
 /// The notices of the updates, for the reports, with the number of those dropped at the limit.
@@ -211,6 +213,7 @@ impl Updater {
             notices.push(Notice {
                 name: change.name.clone(),
                 changed: before.as_ref() != Some(&change.value),
+                value: change.value.clone(),
             });
         }
         state.data = next;

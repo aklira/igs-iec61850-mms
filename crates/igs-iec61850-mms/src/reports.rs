@@ -37,8 +37,18 @@ use igs_iso9506_mms_codec::generated::types::{
     UnconfirmedService, VariableAccessSpecification, WriteResponseItemItem,
 };
 
+use crate::buffered::BufferedBlock;
 use crate::model::NodeValue;
 use crate::updates::{Notice, Updater};
+
+/// The block that an attribute names: an unbuffered block (`$RP$`) or a buffered one (`$BR$`), by its index in the state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlockRef {
+    /// An unbuffered block, by its index.
+    Unbuffered(usize),
+    /// A buffered block, by its index.
+    Buffered(usize),
+}
 
 /// The seconds from 1 January 1970 to 1 January 1984: the epoch of the binary time of MMS.
 const SECONDS_1970_TO_1984: u64 = 441_763_200;
@@ -102,8 +112,33 @@ impl Wire {
         })
     }
 
+    /// The logical device of the variable.
+    pub(crate) fn device(&self) -> &str {
+        &self.device
+    }
+
+    /// The name of the variable within its device.
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The index of the member of the data set that selected the variable.
+    pub(crate) fn member(&self) -> usize {
+        self.member
+    }
+
+    /// The triggers of the variable.
+    pub(crate) fn triggers(&self) -> TriggerOptions {
+        self.triggers
+    }
+
+    /// The object reference of the variable.
+    pub(crate) fn reference(&self) -> &str {
+        &self.reference
+    }
+
     /// The value of the variable now. The served value is always present: the path comes from the layout of the node.
-    fn value(&self) -> Data {
+    pub(crate) fn value(&self) -> Data {
         match self.root.lock() {
             Ok(state) => value_at(&state.data, &self.path)
                 .cloned()
@@ -197,6 +232,7 @@ impl Block {
 /// The shared state of the reports of a served model: the blocks, the admitted associations, and the outbound reports.
 pub(crate) struct ReportState {
     blocks: Vec<Block>,
+    buffered: Vec<BufferedBlock>,
     outbox: VecDeque<Outbound>,
     peers: Vec<PeerId>,
     origin: Instant,
@@ -207,6 +243,7 @@ impl ReportState {
     pub(crate) fn new() -> Self {
         Self {
             blocks: Vec::new(),
+            buffered: Vec::new(),
             outbox: VecDeque::new(),
             peers: Vec::new(),
             origin: Instant::now(),
@@ -217,6 +254,14 @@ impl ReportState {
     #[cfg_attr(not(feature = "scl"), allow(dead_code))]
     pub(crate) fn add_block(&mut self, block: Block) {
         self.blocks.push(block);
+    }
+
+    /// Adds a buffered block, and starts it (its integrity period, if any).
+    #[cfg_attr(not(feature = "scl"), allow(dead_code))]
+    pub(crate) fn add_buffered(&mut self, mut block: BufferedBlock) {
+        let now = self.now();
+        block.start(now, &mut self.outbox);
+        self.buffered.push(block);
     }
 
     fn now(&self) -> Duration {
@@ -268,6 +313,9 @@ impl ReportState {
                 apply(block, actions, &mut self.outbox);
             }
         }
+        for block in &mut self.buffered {
+            block.released(now, peer, &mut self.outbox);
+        }
     }
 
     /// One poll of the model: the notices of the updates, the timers that have expired, and the reports to send.
@@ -279,6 +327,20 @@ impl ReportState {
                 let (timer, _) = block.timers.remove(index);
                 let actions = block.urcb.handle(now, Event::Timer(timer));
                 apply(block, actions, &mut self.outbox);
+            }
+        }
+        for block in &mut self.buffered {
+            block.expire(now, &mut self.outbox);
+        }
+        for notice in &notices {
+            for block in &mut self.buffered {
+                block.notify(
+                    now,
+                    &notice.name,
+                    notice.changed,
+                    &notice.value,
+                    &mut self.outbox,
+                );
             }
         }
         for notice in notices {
@@ -305,16 +367,56 @@ impl ReportState {
     }
 
     /// The block and the attribute that an MMS item names (`node$RP$name$attribute` in the device's domain), if it names one.
-    pub(crate) fn locate(&self, domain: &str, item: &str) -> Option<(usize, String)> {
+    pub(crate) fn locate(&self, domain: &str, item: &str) -> Option<(BlockRef, String)> {
         let (component, attribute) = item.rsplit_once('$')?;
-        self.blocks
+        if let Some(index) = self
+            .blocks
             .iter()
             .position(|block| block.device == domain && block.component() == component)
-            .map(|index| (index, attribute.to_string()))
+        {
+            return Some((BlockRef::Unbuffered(index), attribute.to_string()));
+        }
+        self.buffered
+            .iter()
+            .position(|block| block.device() == domain && block.component() == component)
+            .map(|index| (BlockRef::Buffered(index), attribute.to_string()))
     }
 
-    /// The value of an attribute of a block (8-1 table 73), as a read of the model gives it.
-    pub(crate) fn read_attribute(&self, index: usize, attribute: &str) -> AccessResult {
+    /// The value of an attribute of a block, as a read of the model gives it.
+    pub(crate) fn read_attribute(&self, target: BlockRef, attribute: &str) -> AccessResult {
+        match target {
+            BlockRef::Unbuffered(index) => self.read_unbuffered(index, attribute),
+            BlockRef::Buffered(index) => match self.buffered.get(index) {
+                Some(block) => block.read_attribute(attribute),
+                None => AccessResult::Failure(DataAccessError::OBJECT_NON_EXISTENT),
+            },
+        }
+    }
+
+    /// A write of an attribute of a block, as the model dispatches it.
+    pub(crate) fn write_attribute(
+        &mut self,
+        peer: PeerId,
+        target: BlockRef,
+        attribute: &str,
+        data: &Data,
+    ) -> WriteResponseItemItem {
+        match target {
+            BlockRef::Unbuffered(index) => self.write_unbuffered(peer, index, attribute, data),
+            BlockRef::Buffered(index) => {
+                let now = self.now();
+                match self.buffered.get_mut(index) {
+                    Some(block) => {
+                        block.write_attribute(now, peer, attribute, data, &mut self.outbox)
+                    }
+                    None => WriteResponseItemItem::Failure(DataAccessError::OBJECT_NON_EXISTENT),
+                }
+            }
+        }
+    }
+
+    /// The value of an attribute of an unbuffered block (8-1 table 73).
+    fn read_unbuffered(&self, index: usize, attribute: &str) -> AccessResult {
         let Some(block) = self.blocks.get(index) else {
             return AccessResult::Failure(DataAccessError::OBJECT_NON_EXISTENT);
         };
@@ -339,7 +441,7 @@ impl ReportState {
 
     /// A write of an attribute of a block: the write of the state machine, with its refusal as the access result. The
     /// attributes that the standard does not let a client write (`ConfRev`, `SqNum`, `Owner`) are access denied.
-    pub(crate) fn write_attribute(
+    fn write_unbuffered(
         &mut self,
         peer: PeerId,
         index: usize,
@@ -500,13 +602,13 @@ fn apply(
 }
 
 /// The index of the first timer that has expired at `now`.
-fn due(timers: &[(Timer, Duration)], now: Duration) -> Option<usize> {
+pub(crate) fn due(timers: &[(Timer, Duration)], now: Duration) -> Option<usize> {
     timers.iter().position(|(_, at)| *at <= now)
 }
 
 /// The trigger of a change of a variable: the data-change or the quality-change when the value changed, and the data-update
 /// on any update. The first trigger of the variable is the one notified (a notice carries one trigger).
-fn trigger_of(triggers: TriggerOptions, changed: bool) -> Option<Trigger> {
+pub(crate) fn trigger_of(triggers: TriggerOptions, changed: bool) -> Option<Trigger> {
     if changed && triggers.data_change {
         Some(Trigger::DataChange)
     } else if changed && triggers.quality_change {
@@ -519,7 +621,7 @@ fn trigger_of(triggers: TriggerOptions, changed: bool) -> Option<Trigger> {
 }
 
 /// The time since 1 January 1984 of a system time (zero before that epoch).
-fn since_1984(now: SystemTime) -> Duration {
+pub(crate) fn since_1984(now: SystemTime) -> Duration {
     now.duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .saturating_sub(Duration::from_secs(SECONDS_1970_TO_1984))

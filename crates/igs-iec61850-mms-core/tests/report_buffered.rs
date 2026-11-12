@@ -17,11 +17,9 @@ use std::time::Duration;
 
 use igs_iec61850_mms_core::control::ClientId;
 use igs_iec61850_mms_core::report::brcb::{
-    Action, Brcb, BufferedReport, EntryId, Event, Refusal, State, Write,
+    Action, Brcb, BufferedFields, BufferedReport, Config, EntryId, Event, Refusal, State, Write,
 };
-use igs_iec61850_mms_core::report::urcb::{
-    Config, Reason, ReportKind, Timer, Trigger, TriggerOptions,
-};
+use igs_iec61850_mms_core::report::urcb::{Reason, ReportKind, Timer, Trigger, TriggerOptions};
 
 const ALICE: ClientId = ClientId(1);
 
@@ -44,7 +42,7 @@ fn block(capacity: usize, buf_ms: u64, intg_ms: u64, trg: TriggerOptions) -> Brc
             rpt_id: "RPT1".to_string(),
             data_set: Some("DS1".to_string()),
             data_sets: BTreeMap::from([("DS1".to_string(), 3)]),
-            opt_flds: Default::default(),
+            opt_flds: BufferedFields::default(),
             buf_tm: ms(buf_ms),
             intg_pd: ms(intg_ms),
             trg_ops: trg,
@@ -420,7 +418,11 @@ fn a_configuration_is_refused_while_enabled_and_a_change_purges_the_history() {
     change(3, &mut brcb, 0);
     write(4, &mut brcb, Write::RptEna(true));
     assert_eq!(
-        answers(&write(5, &mut brcb, Write::OptFields(Default::default()))),
+        answers(&write(
+            5,
+            &mut brcb,
+            Write::OptFields(BufferedFields::default())
+        )),
         [Err(Refusal::Enabled)]
     );
     assert_eq!(

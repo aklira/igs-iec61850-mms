@@ -19,9 +19,11 @@ use igs_iec61850_mms_core::model::layout::{
 };
 use igs_iec61850_mms_core::model::{ModelError, ServerModel};
 
-use crate::control::{AcceptAll, ControlHandle, ControlHandler, Controls};
 #[cfg(feature = "scl")]
-use crate::reports::{Block, Wire};
+use crate::buffered::BufferedBlock;
+use crate::control::{AcceptAll, ControlHandle, ControlHandler, Controls};
+#[cfg_attr(not(feature = "scl"), allow(unused_imports))]
+use crate::reports::{Block, BlockRef, Wire};
 use crate::reports::{ReportState, Reports};
 use crate::updates::{Point, Updater};
 use igs_iso9506_mms::client::{in_scope_capabilities, ClientConfig};
@@ -318,6 +320,36 @@ impl ServedModel {
                 wires,
             ));
         }
+        for declared in &configuration.buffered {
+            let set = configuration
+                .data_sets
+                .iter()
+                .find(|set| {
+                    set.device == declared.device
+                        && set.node == declared.node
+                        && Some(set.name.as_str()) == declared.config.data_set.as_deref()
+                })
+                .ok_or_else(|| ServeError::Report(declared.name.clone()))?;
+            let mut wires = Vec::with_capacity(set.variables.len());
+            for variable in &set.variables {
+                let wire = Wire::new(
+                    &updater,
+                    &variable.device,
+                    &variable.name,
+                    variable.member,
+                    variable.triggers,
+                )
+                .ok_or_else(|| ServeError::Report(variable.name.clone()))?;
+                wires.push(wire);
+            }
+            state.add_buffered(BufferedBlock::new(
+                &declared.name,
+                &declared.device,
+                &declared.node,
+                declared.config.clone(),
+                wires,
+            ));
+        }
         let controls = configured_controls(configuration, &updater)?;
         Ok(Self {
             vmd,
@@ -477,8 +509,9 @@ impl ServedModel {
         }
     }
 
-    /// The block and the attribute that an item names, if it is an attribute of an unbuffered block (`node$RP$name$attribute`).
-    fn block_attribute(&self, name: &ObjectName) -> Option<(usize, String)> {
+    /// The block and the attribute that an item names, if it is an attribute of a report control block (`node$RP$name$attribute` or
+    /// `node$BR$name$attribute`).
+    fn block_attribute(&self, name: &ObjectName) -> Option<(BlockRef, String)> {
         let ObjectName::DomainSpecific(object) = name else {
             return None;
         };

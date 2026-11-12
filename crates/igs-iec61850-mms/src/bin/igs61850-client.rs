@@ -12,10 +12,12 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use igs_iec61850_mms::client::{ClientError, IecClient};
+use igs_iec61850_mms::client_buffered::{decode_buffered_report, BufferedWrite};
 use igs_iec61850_mms::client_report::{decode_report, UrcbWrite};
 use igs_iec61850_mms::model::client_config;
 use igs_iec61850_mms_core::discovery::{Definition, Leaf, Size};
 use igs_iec61850_mms_core::names::{MmsIdentifier, MmsName, Name, Scope};
+use igs_iec61850_mms_core::report::brcb::{BufferedFields, EntryId};
 use igs_iec61850_mms_core::report::urcb::{OptionalFields, TriggerOptions};
 use igs_iso9506_mms::client::{Event, Events};
 use igs_iso9506_mms::Reconnect;
@@ -88,6 +90,24 @@ enum Command {
         /// How long the reports are waited for, in seconds.
         #[arg(long, default_value_t = 5)]
         seconds: u64,
+    },
+    /// Configures, enables and reads a buffered block; prints each report it receives, decoded, with its entry identifier.
+    Buffered {
+        device: String,
+        node: String,
+        block: String,
+        /// The data set of the block.
+        #[arg(long)]
+        data_set: Option<String>,
+        /// The integrity period in milliseconds (zero: no integrity entries).
+        #[arg(long, default_value_t = 0)]
+        integrity_ms: u32,
+        /// How long the reports are waited for, in seconds.
+        #[arg(long, default_value_t = 5)]
+        seconds: u64,
+        /// Resynchronises to this entry (sixteen hexadecimal digits) before enabling: the reports start after it.
+        #[arg(long)]
+        resume_after: Option<String>,
     },
 }
 
@@ -230,7 +250,151 @@ async fn execute(
             )
             .await;
         }
+        Command::Buffered {
+            device,
+            node,
+            block,
+            data_set,
+            integrity_ms,
+            seconds,
+            resume_after,
+        } => {
+            let resume = match resume_after {
+                Some(text) => Some(EntryId(
+                    u64::from_str_radix(&text, 16)
+                        .map_err(|error| Failure::Usage(format!("--resume-after: {error}")))?,
+                )),
+                None => None,
+            };
+            return buffered(
+                client,
+                events,
+                &device,
+                &node,
+                &block,
+                data_set,
+                integrity_ms,
+                seconds,
+                resume,
+            )
+            .await;
+        }
     }
+    Ok(true)
+}
+
+/// Configures, enables and reads a buffered block; prints each report it receives, decoded. `Ok(true)` when at least one report came.
+#[allow(clippy::too_many_arguments)]
+async fn buffered(
+    client: &IecClient,
+    events: &mut Events,
+    device: &str,
+    node: &str,
+    block: &str,
+    data_set: Option<String>,
+    integrity_ms: u32,
+    seconds: u64,
+    resume_after: Option<EntryId>,
+) -> Result<bool, Failure> {
+    let values = client.buffered_values(device, node, block).await?;
+    println!(
+        "{} : enabled {}, data set {:?}, last entry {:016x}",
+        values.rpt_id, values.enabled, values.data_set, values.entry_id.0
+    );
+    let data_set = match data_set.or(values.data_set) {
+        Some(name) => name,
+        None => {
+            return Err(Failure::Usage(
+                "the block has no data set: give one with --data-set".to_string(),
+            ))
+        }
+    };
+    let options = BufferedFields {
+        seq_num: true,
+        time_stamp: true,
+        reason_code: true,
+        data_set_name: true,
+        data_ref: true,
+        buf_ovfl: true,
+        entry_id: true,
+        conf_rev: true,
+        segmentation: true,
+    };
+    let triggers = TriggerOptions {
+        data_change: true,
+        quality_change: true,
+        data_update: true,
+        integrity: integrity_ms > 0,
+        general_interrogation: false,
+    };
+    let mut steps = vec![
+        BufferedWrite::DataSet(Some(data_set)),
+        BufferedWrite::OptFields(options),
+        BufferedWrite::TriggerOptions(triggers),
+        BufferedWrite::BufTm(0),
+        BufferedWrite::IntgPd(integrity_ms),
+    ];
+    if let Some(entry) = resume_after {
+        steps.push(BufferedWrite::EntryId(entry));
+    }
+    steps.push(BufferedWrite::Enable(true));
+    for step in steps {
+        if let Err(error) = client.buffered_write(device, node, block, step).await? {
+            println!("the block refuses a write: {error:?}");
+            return Ok(false);
+        }
+    }
+    let mut received = 0usize;
+    let waiting = tokio::time::timeout(Duration::from_secs(seconds), async {
+        loop {
+            match events.next().await {
+                Some(Event::Report(service)) => {
+                    let Some(decoded) = decode_buffered_report(&service) else {
+                        // A report the buffered layout does not decode is shown, not dropped: its shape is the diagnostic.
+                        let shape = format!("{service:?}");
+                        println!("an undecoded report: {}", shape.chars().take(400).collect::<String>());
+                        continue;
+                    };
+                    {
+                        received = received.saturating_add(1);
+                        let entry = decoded
+                            .entry_id
+                            .map_or("-".to_string(), |id| format!("{:016x}", id.0));
+                        println!(
+                            "buffered report {} : entry {entry}, sequence {:?}, sub-sequence {:?}, more {:?}, buffer overflow {:?}, {} entries",
+                            decoded.rpt_id,
+                            decoded.sequence,
+                            decoded.sub_sequence,
+                            decoded.more_segments,
+                            decoded.buf_ovfl,
+                            decoded.entries.len()
+                        );
+                        for entry in &decoded.entries {
+                            println!(
+                                "  {} {:?} = {} {:?}",
+                                entry.index,
+                                entry.reference,
+                                show(&entry.value),
+                                entry.reasons
+                            );
+                        }
+                    }
+                }
+                Some(_) => continue,
+                None => break,
+            }
+        }
+    })
+    .await;
+    let _ = waiting;
+    let _ = client
+        .buffered_write(device, node, block, BufferedWrite::Enable(false))
+        .await;
+    if received == 0 {
+        println!("no report was received in {seconds} s");
+        return Ok(false);
+    }
+    println!("{received} report(s) received");
     Ok(true)
 }
 

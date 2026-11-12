@@ -98,16 +98,34 @@ fn a_declared_service_the_server_does_not_execute_is_refused() {
 }
 
 #[test]
-fn a_declared_buffered_report_control_is_refused_because_it_would_be_lost() {
+fn a_declared_buffered_report_control_is_built_with_its_buffered_options() {
     let text = mutate(
         "            </DataSet>\n          </LN0>",
-        "            </DataSet>\n            <ReportControl name=\"RC1\" datSet=\"DS1\" rptID=\"r\" confRev=\"1\" buffered=\"true\">\n              <OptFields seqNum=\"true\" timeStamp=\"true\" reasonCode=\"true\"/>\n            </ReportControl>\n          </LN0>",
+        "            </DataSet>\n            <ReportControl name=\"RC1\" datSet=\"DS1\" rptID=\"r\" confRev=\"1\" bufTime=\"100\" intgPd=\"500\" buffered=\"true\">\n              <TrgOps dchg=\"true\" period=\"true\"/>\n              <OptFields seqNum=\"true\" timeStamp=\"true\" reasonCode=\"true\" bufOvfl=\"true\" entryID=\"true\"/>\n            </ReportControl>\n          </LN0>",
     );
-    refused_with(
-        build_text(&text),
-        "SCOPE-002",
-        "the declared ReportControl RC1 is a buffered report control block",
+    let configuration = build_text(&text).expect("the document builds");
+    assert!(
+        configuration.reports.is_empty(),
+        "a buffered block is not an unbuffered one"
     );
+    assert_eq!(configuration.buffered.len(), 1);
+    let block = &configuration.buffered[0];
+    assert_eq!(
+        (
+            block.device.as_str(),
+            block.node.as_str(),
+            block.name.as_str()
+        ),
+        ("LD1", "LLN0", "RC1")
+    );
+    assert!(block.config.opt_flds.buf_ovfl && block.config.opt_flds.entry_id);
+    assert!(
+        !block.config.opt_flds.segmentation,
+        "the client sets the segmentation option"
+    );
+    assert_eq!(block.config.buf_tm, std::time::Duration::from_millis(100));
+    assert_eq!(block.config.intg_pd, std::time::Duration::from_millis(500));
+    assert!(block.config.trg_ops.integrity && block.config.trg_ops.data_change);
 }
 
 #[test]

@@ -56,7 +56,23 @@ The attributes of the block have the names of IEC 61850-8-1 table 73 in the refe
 
 Not covered: the reverse direction (the reference example client receives the reports of our server). Our server serves the demonstration model,
 which has no report control block; serving a configuration read from SCL is the step that makes this row possible (a gap of the `igs61850-server`
-binary, see the table below). The buffered blocks (`EventsBRCB01` of the reference server) are the task B.
+binary, see the table below). The buffered blocks (`EventsBRCB01` of the reference server) are in matrix C2.
+
+## Matrix C2: buffered reports, our client against the reference server (task B2)
+
+`bench/tests/test_b2_buffered.py`: our client configures the buffered block `EventsBRCB01` of the example `server_example_basic_io`
+(data set `LLN0$Events`, the options of 8-1 table 74 with the entry identifier and the overflow flag), enables it, and decodes the buffered
+reports the reference server sends for its integrity period. The capture must decode without an error in tshark.
+
+| Row | Result |
+| --- | --- |
+| Integrity period of 1 s: buffered reports with an entry identifier and a sequence number | Passes: entries in order, each once, sequence numbers consecutive, reason integrity |
+
+The peer's reports follow the wire order of 8-1 table 74 (the time of entry before the data set, the inclusion bit string in every report), which
+the decoder reads (D-038). The first attempt failed on that order: the decoder now follows the table of the wire.
+
+Not covered: the reverse direction (the reference example client receives the buffered reports of our server), and the resumption of the peer
+after a lost association (our client sets an entry identifier of the peer and enables the block). Both are in the gap table below.
 
 ## Findings of the bench, and the fixes
 
@@ -84,7 +100,7 @@ binary, see the table below). The buffered blocks (`EventsBRCB01` of the referen
 | --- | --- |
 | Controls: select, operate, cancel | K |
 | Reports: the reverse direction (the reference client receives our reports), which needs a configuration read from SCL in the server binary | D6 follow-up (the server binary serves an SCL configuration) |
-| Buffered reports (`EventsBRCB01` of the reference server) | B |
+| Buffered reports: the reverse direction, and the resumption from an entry identifier against the reference server (`EventsBRCB01`) | B2 follow-up (the server binary serves an SCL configuration, as for the unbuffered reports) |
 | GOOSE | Out of scope of the plan |
 | Data sets (dynamic creation and reading) | D |
 | Setting groups (select and edit) | O3 |

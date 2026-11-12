@@ -19,6 +19,7 @@ use std::time::Duration;
 use crate::catalogue;
 use crate::model::layout::{layout, IDENTIFIER_LIMIT};
 use crate::model::{DataObjectSpec, LogicalDevice, LogicalNode, Node, ServerModel};
+use crate::report::brcb::{self, BufferedFields};
 use crate::report::urcb::{Config, OptionalFields, TriggerOptions};
 
 use super::validate::{segment, Diagnostic, Templates};
@@ -152,6 +153,19 @@ pub struct ReportDecl {
     pub config: Config,
 }
 
+/// A buffered report control block of the IED: its logical device and node, its name, and its configuration (task B2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BufferedDecl {
+    /// The logical device of the block.
+    pub device: String,
+    /// The logical node of the block.
+    pub node: String,
+    /// The name of the block.
+    pub name: String,
+    /// The configuration of the block, as the buffered state machine takes it.
+    pub config: brcb::Config,
+}
+
 /// The configuration of one IED: its model, its data sets, its report control blocks, and its address parameters.
 #[derive(Debug)]
 pub struct Configuration {
@@ -163,6 +177,8 @@ pub struct Configuration {
     pub data_sets: Vec<DataSet>,
     /// The unbuffered report control blocks, in document order.
     pub reports: Vec<ReportDecl>,
+    /// The buffered report control blocks, in document order.
+    pub buffered: Vec<BufferedDecl>,
     /// The initial values of the basic data attributes, in document order.
     pub values: Vec<InstanceValue>,
     /// The address parameters of the connections of the IED.
@@ -184,6 +200,7 @@ pub fn build(
         diagnostics: Vec::new(),
         pending: Vec::new(),
         reports: Vec::new(),
+        buffered: Vec::new(),
         values: Vec::new(),
     };
     let Some(ied_element) = root
@@ -259,6 +276,7 @@ pub fn build(
     let addresses = builder.addresses(root, ied);
     let data_sets = builder.resolve_data_sets(&model);
     let reports = std::mem::take(&mut builder.reports);
+    let buffered = std::mem::take(&mut builder.buffered);
     let values = std::mem::take(&mut builder.values);
     builder.finish()?;
     Ok(Configuration {
@@ -266,6 +284,7 @@ pub fn build(
         model,
         data_sets,
         reports,
+        buffered,
         values,
         addresses,
     })
@@ -277,6 +296,7 @@ struct Builder<'a> {
     diagnostics: Vec<Diagnostic>,
     pending: Vec<Pending>,
     reports: Vec<ReportDecl>,
+    buffered: Vec<BufferedDecl>,
     values: Vec<InstanceValue>,
 }
 
@@ -718,6 +738,18 @@ impl Builder<'_> {
             let block_path = segment(path, block);
             let buffered = flag(Some(block), "buffered");
             if block.name == "ReportControl"
+                && buffered
+                && self.capabilities.executes("ReportControl")
+            {
+                self.buffered.push(BufferedDecl {
+                    device: device_inst.to_string(),
+                    node: node_name.to_string(),
+                    name: name.to_string(),
+                    config: buffered_config(node, block),
+                });
+                continue;
+            }
+            if block.name == "ReportControl"
                 && !buffered
                 && self.capabilities.executes("ReportControl")
             {
@@ -729,11 +761,7 @@ impl Builder<'_> {
                 });
                 continue;
             }
-            let reason = if buffered {
-                "a buffered report control block is not built by this release"
-            } else {
-                "not built by this release"
-            };
+            let reason = "not built by this release";
             self.report(
                 "SCOPE-002",
                 block,
@@ -786,6 +814,33 @@ fn report_config(node: &Element, block: &Element) -> Config {
             .attribute("confRev")
             .and_then(|value| value.parse().ok())
             .unwrap_or(0),
+    }
+}
+
+/// The configuration of a buffered report control block: the unbuffered one, with the options of the buffered block (`bufOvfl`,
+/// `entryID`). The segmentation is not in the SCL: the server segments when it must, and the client sets the option.
+fn buffered_config(node: &Element, block: &Element) -> brcb::Config {
+    let base = report_config(node, block);
+    let options = block.children.iter().find(|c| c.name == "OptFields");
+    brcb::Config {
+        rpt_id: base.rpt_id,
+        data_set: base.data_set,
+        data_sets: base.data_sets,
+        opt_flds: BufferedFields {
+            seq_num: base.opt_flds.seq_num,
+            time_stamp: base.opt_flds.time_stamp,
+            reason_code: base.opt_flds.reason_code,
+            data_set_name: base.opt_flds.data_set_name,
+            data_ref: base.opt_flds.data_ref,
+            buf_ovfl: flag(options, "bufOvfl"),
+            entry_id: flag(options, "entryID"),
+            conf_rev: base.opt_flds.conf_rev,
+            segmentation: false,
+        },
+        buf_tm: base.buf_tm,
+        intg_pd: base.intg_pd,
+        trg_ops: base.trg_ops,
+        conf_rev: base.conf_rev,
     }
 }
 
