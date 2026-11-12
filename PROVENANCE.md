@@ -446,6 +446,44 @@ silent, to be confirmed by an observation test against other implementations.
 - **Test**: `tests/control.rs` (31 tests): every transition of the four models, each refusal of Table 108 the models reach, the
   timers, the association loss, the consistency of a sequence, the catalogue names of the causes, and the determinism.
 
+### D-021 — The checks of an SCL document: the frozen schema, the references and the gaps (task S2; SCL-002 to SCL-004)
+
+- **Decision**: the structure is checked against the 2007B schema of IEC 61850-6:2009 (edition 2.0), frozen in the private
+  package and read once by a generator (`norm_preparation/extract_scl_schema.py`), which writes the table
+  `crates/igs-iec61850-mms-core/src/scl/generated/schema_2007b.rs` (157 types, 9 root elements). The validator reads the table,
+  never the XSD. The occurrences of enclosing groups multiply in (a `choice` with `maxOccurs="unbounded"` repeats its members);
+  under a choice, a member's minimum is 0, so the count required of a choice as a whole is not checked.
+- **Wildcards**: the schema's `##other` wildcards admit foreign-namespace elements only. The parser keeps unqualified attributes
+  only (namespaced attributes such as `xsi:schemaLocation` are not kept), so every attribute the validator sees is unqualified:
+  an attribute the schema does not name is refused, whatever the type's attribute wildcard. `Private` is opaque: its content is
+  not checked.
+- **Anonymous types** are named `anon:<root element>` (SCL, LN0) or `<Parent>/<Element>` (local types). A child of simple type
+  is `simple`, and its text is not checked.
+- **References** (SCL-003): `lnType`, the `type` of DO, SDO, DA and BDA (a DA or BDA of bType Enum takes an EnumType, of bType
+  Struct a DAType; a DA with either bType and no type is refused); the members of data sets (`FCDA`: the LDevice of `ldInst`,
+  the logical node of prefix, class and instance, then `doName` and `daName` followed through the templates); the `datSet` of
+  control blocks; `iedName` of `ConnectedAP` and `ExtRef`. When a logical node's type is unresolved, its data-set members are not
+  checked again (one finding, not a cascade).
+- **Namespaces** (SCL-004): a root outside the 2007B namespace (the other root namespaces are not supported), and an element of
+  another namespace where the schema admits none.
+- **Diagnostics**: each has its code, the file, a path (`SCL/IED[IED1]/AccessPoint[AP1]/Server/LDevice[LD1]/LN[GGIO1]`), the line
+  of the start tag (`Element.line`, added to S1) and the message. A document with any finding is refused as a whole, and every
+  finding is returned, sorted by line.
+- **Decision to confirm (R1 or the user)**: the root attribute `release` (written by many tools, for example `release="4"`) is
+  absent from the frozen 2007B schema, which has only `version` and `revision`; such a document is refused with SCL-002. The
+  frozen schema is the reference of S2, and the held package does not show the later edition that adds the attribute. To be
+  settled when real files are checked (the SCD examples of the RTE captures).
+- **Gaps**: the order of the elements of a sequence is not checked; `ExtRef` is checked for `iedName` only (`srcLDInst` and
+  `srcCBName` are not resolved against the other IED); control blocks are checked for `datSet` only (the other service
+  declarations, such as `Services`, follow the table); the number of the exact occurrences of a choice; the dataset member
+  `fc` and the uniqueness of the names; integer attribute values are checked against the range of their type.
+- **Confidence**: high for the table (its counts checked with xmlschema, and the types of IED, ReportControl, DataSet and DOType
+  checked against the XSD by hand); high for the refusals (tests); medium for the references, whose rules were written from the
+  XSD and not yet confronted with real SCD files.
+- **Tests**: `tests/scl_validate.rs` (21 tests): a valid document with a `Private` element accepted; each refusal above with its
+  code, message and line; several findings all reported in line order; a diagnostic shown with its file, line, path and code;
+  a malicious document type refused before the checks.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

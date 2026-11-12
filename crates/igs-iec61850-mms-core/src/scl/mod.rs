@@ -12,6 +12,10 @@
 //!
 //! Every bound is checked while the tree is built, and the recursion of the builder is bounded by [`DEPTH_CEILING`].
 
+mod generated;
+mod schema;
+pub mod validate;
+
 use std::fmt;
 
 use roxmltree::ParsingOptions;
@@ -71,6 +75,8 @@ pub struct Element {
     pub name: String,
     /// The namespace of the element, if it has one.
     pub namespace: Option<String>,
+    /// The line of the start tag, from 1 (diagnostics of the semantic checks give it).
+    pub line: u32,
     /// The attributes, in document order, as (local name, value).
     pub attributes: Vec<(String, String)>,
     /// The child elements, in document order. Text is not kept by this parser.
@@ -275,7 +281,11 @@ fn build(
     }
 
     let mut attributes = Vec::new();
-    for attribute in node.attributes() {
+    // Attributes of another namespace (xsi:schemaLocation, for example) are not SCL attributes: they are not kept.
+    for attribute in node
+        .attributes()
+        .filter(|attribute| attribute.namespace().is_none())
+    {
         if attributes.len() >= limits.max_attributes {
             return Err(SclError::TooManyAttributes {
                 element: name,
@@ -302,9 +312,11 @@ fn build(
             counts,
         )?);
     }
+    let line = node.document().text_pos_at(node.range().start).row;
     Ok(Element {
         name,
         namespace: node.tag_name().namespace().map(str::to_string),
+        line,
         attributes,
         children,
     })

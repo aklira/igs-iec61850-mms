@@ -4,6 +4,10 @@ Copyright 2026 The igs-iec61850-mms contributors
 This product is licensed under the Apache License, Version 2.0 (LICENSE), except the files whose
 SPDX header names IEC-Code-Components-EULA.
 
+The file crates/igs-iec61850-mms-core/src/scl/generated/schema_2007b.rs is generated from the SCL schema (XSD)
+of IEC 61850-6:2009 edition 2.0, 2007B, as published by the IEC (www.iec.ch/CCv1, code component package). Its header keeps
+the IEC copyright notice and the attribution note below, and its SPDX identifier is IEC-Code-Components-EULA.
+
 Those files, under crates/igs-iec61850-mms-core/src/catalogue/generated/, are generated from IEC Code
 Components: the NSD files of IEC 61850-7-2:2007B6, IEC 61850-7-3:2007B6 and IEC 61850-7-4:2007B6, and
 the SNSD and AppNS files of IEC 61850-8-1:2003A4, as published by the IEC at
