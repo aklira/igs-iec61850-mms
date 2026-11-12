@@ -550,7 +550,7 @@ The agent does not wait for these; it records the impact and continues with what
 | D6 Reporting interop | [ ] |
 | B1 BRCB state machine and history | [ ] |
 | B2 BRCB delivery, segmentation and client side | [ ] |
-| K1 Control state machines | [ ] |
+| K1 Control state machines | [x] |
 | K2 MMS mapping of controls | [ ] |
 | K3 Deferred outcomes and client control API | [ ] |
 | E1 Inventory of Edition 1 differences | [ ] |

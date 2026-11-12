@@ -23,6 +23,7 @@
 
 pub mod acsi;
 pub mod catalogue;
+pub mod control;
 pub mod discovery;
 pub mod model;
 

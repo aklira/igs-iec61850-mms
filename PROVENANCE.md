@@ -408,6 +408,44 @@ silent, to be confirmed by an observation test against other implementations.
 - **Test**: `tests/scl_parse.rs` (15 tests: one per refusal, a valid document read with its structure, two property tests
   that check that arbitrary and mutated bytes never panic).
 
+### D-020 — The control state machines: the four models of 7-2 §20, and the choices the figures leave open (task K1)
+
+- **Decision**: the machine (core module `control`) implements the four control models of 7-2 §20.1 to §20.3, from the
+  state diagrams of Figures 40 (direct, normal), 42 (select before operate, normal), 43 (direct, enhanced) and 44 (select
+  before operate, enhanced), read on the PDF pages (7-2 pp. 153, 156, 159 and 161 of the printed numbering), and the
+  refusals of Table 108. The machine is sans-I/O: it takes a request, a verdict of the application, a change of status, a
+  timer or a loss of association, with the time from the start of the machine, and returns the actions (responses,
+  checks, `Execute`, `Mirror`, `Terminate`, timers). The application's checks are asked for by an action and answered by
+  an event (CTL-003).
+- **The choices the figures leave open**:
+  - a failed check (operative or dynamic), a timer, a cancel, a refused behaviour or a lost association **ends the
+    selection** (the arrows of Figures 42 and 44 lead to `EndSelection`); a succeeded command ends it according to
+    `sboClass`: `operate-once` releases, `operate-many` keeps the owner and rearms `sboTimeout`;
+  - the positive response of an operation is sent **before** the output is activated (Figures 40 and 43);
+  - `Beh` decides the output: `on` and `test` activate it; `test/blocked` mirrors the command (enhanced: CommandTermination
+    negative, `Blocked-by-Mode`, as Figure 44 shows); `blocked` and `off` refuse the command with `Blocked-by-Mode` before any
+    output. The figures show only `on`, `test` and `test/blocked`: the refusal of `blocked` and `off` is ours (confidence
+    medium);
+  - a cancel of an operation in progress is positive, and the operation is answered negatively with `Abortion-by-cancel`
+    (Figures 40 and 42);
+  - a cancel in the change of an enhanced command, and any request during a command, are refused (Table 108);
+  - the association of the owner lost during a change terminates the command with `Abortion-by-communication-loss` (Table 108
+    does not cover it; confidence medium).
+- **Consistency** (CTL-004; 7-2 §20.5.2: all primitives of a sequence carry the same origin, test flag and control value):
+  a request whose origin or test flag differs, or whose value differs from the sequence's, is refused with
+  `Inconsistent-parameters`. A selection of normal security carries no value: its first operation gives it one.
+- **The two kinds of refusal** of a request that does not belong to the model: `class-not-supported` for a direct model
+  (Table 108, a SelectWithValue or a Select), and `NotInModel` (an unknown control request, Table 108, last row) for the
+  select requests of the other selection model. They are different service errors (K2 maps them).
+- **Not in K1**: the time-activated operate (§20.4, `TimOper`), which the mapping of K2 declares unsupported; the `ctlNum`
+  is carried and not checked (7-2 §20.5.2: its use is an issue of the client); the check bits are passed to the application.
+- **Sources**: IEC 61850-7-2 §20.1 to §20.3 (text and Figures 40, 42, 43, 44), §20.5.2 (Table 110), Table 108; the enumerations
+  `CtlModelKind`, `SboClassKind`, `BehaviourModeKind` and `ControlServiceStatusKind` of the catalogue (P5).
+- **Confidence**: high for the transitions of the four figures (the figures were read, the tests follow them); medium for the
+  choices listed above, which are marked where they are made.
+- **Test**: `tests/control.rs` (31 tests): every transition of the four models, each refusal of Table 108 the models reach, the
+  timers, the association loss, the consistency of a sequence, the catalogue names of the causes, and the determinism.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
