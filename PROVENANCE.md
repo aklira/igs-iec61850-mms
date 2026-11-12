@@ -376,6 +376,38 @@ silent, to be confirmed by an observation test against other implementations.
 - **Test**: `bench/tests/test_a7_data_access.py` (7 rows), `bench/tests/test_a7_reverse.py` (6 rows); the campaign of the
   last run is in the task log.
 
+### D-018 — The SCL parser: a read-only XML tree, no document type, no entity resolution (task S1)
+
+- **Decision**: the SCL parser (module `scl` of the core crate) is behind the feature `scl`, off by default. It reads the
+  document with roxmltree 0.21 (MIT OR Apache-2.0, no dependency), the parser already held for the NSD files (`xtask`, F3).
+  A document that carries a document type declaration (`<!DOCTYPE`) is refused before reading, and roxmltree is run with
+  `allow_dtd: false`, so that external and internal entities are never expanded. The default entity resolver resolves
+  nothing: no file and no network is opened.
+- **Why**: SCL-004 forbids external entity resolution and network fetches. SCL uses no document type declaration (IEC
+  61850-6 defines the schema, not a DTD), so refusing one loses nothing and removes the attack surface of entity expansion.
+- **Confidence**: high. Tests: `tests/scl_parse.rs` (an external file entity, a network entity and an expansion bomb are
+  refused with `DocTypeNotAllowed`); a fuzz target `fuzz/fuzz_targets/scl_parse.rs` ran for 90 s (about two million inputs)
+  without a crash or a panic.
+- **Sources**: SCL-004 and SCL-002 of `SPECIFICATIONS.md`; the parser's documentation (`ParsingOptions::allow_dtd`).
+
+### D-019 — The bounds of the SCL parser (task S1; SCL-004)
+
+- **Decision**: a parse checks each bound while it builds the tree: the size of the document (64 MiB by default), the
+  nesting (64 levels by default, and never more than `DEPTH_CEILING` = 256, which bounds the recursion of the builder),
+  the number of elements (1 000 000), the number of instances (250 000), the number of attributes of one element (128), and
+  the length of an attribute value (4096 bytes). The tree reader is also given twice the element bound as its node limit.
+- **The instances** are the elements that the model instantiates: IED, AccessPoint, Server, LDevice, LN0, LN, DOI, DAI,
+  SDI, ConnectedAP, SubNetwork. This is the list the bound counts; it is not an SCL classification.
+- **Refusals**: a document too large, not UTF-8, with a document type declaration, not well-formed, nested too deep, with
+  too many elements or instances, an element with too many attributes, a value too long, or a root that is not `SCL`. Each
+  is an error with its reason; no partial document is returned.
+- **Not in S1**: the namespace of the root (checked in S2, with the XSD), the semantic checks (S2), and the atomic activation
+  of a model built from the document (S3). The parser returns a tree; it builds nothing.
+- **Confidence**: high for the refusals (tests); medium for the default values, which are chosen for a large substation
+  description and are to be revisited with real files (in the RTE field captures and SCD examples when the user provides them).
+- **Test**: `tests/scl_parse.rs` (15 tests: one per refusal, a valid document read with its structure, two property tests
+  that check that arbitrary and mutated bytes never panic).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

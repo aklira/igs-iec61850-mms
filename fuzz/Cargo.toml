@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 The igs-iec61850-mms contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Fuzz targets of the SCL parser (task S1), run with cargo-fuzz on nightly. This crate is not a member of the workspace:
+# its dependency on libFuzzer is not part of the gate (libfuzzer-sys is MIT OR Apache-2.0).
+
+[package]
+name = "igs-iec61850-mms-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+igs-iec61850-mms-core = { path = "../crates/igs-iec61850-mms-core", features = ["scl"] }
+
+[[bin]]
+name = "scl_parse"
+path = "fuzz_targets/scl_parse.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

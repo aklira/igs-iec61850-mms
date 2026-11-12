@@ -9,6 +9,7 @@ members = [
     "crates/igs-iec61850-mms",
     "xtask",
 ]
+exclude = ["fuzz"]
 
 [workspace.package]
 edition = "2021"

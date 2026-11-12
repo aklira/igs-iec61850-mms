@@ -34,3 +34,6 @@ docs/spec
 *.snsd
 *.AppNS
 SCL*.xsd
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/

@@ -155,6 +155,7 @@ version = "0.1.0"
 dependencies = [
  "igs-iso9506-mms-codec",
  "proptest",
+ "roxmltree",
 ]
 
 [[package]]

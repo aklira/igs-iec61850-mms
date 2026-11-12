@@ -28,4 +28,6 @@ pub mod model;
 
 pub mod names;
 pub mod reference;
+#[cfg(feature = "scl")]
+pub mod scl;
 pub mod time;

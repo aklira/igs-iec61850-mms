@@ -14,7 +14,13 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+# The SCL parser (IEC 61850-6, task S1). Off by default: the sans-I/O model does not need it.
+scl = ["dep:roxmltree"]
+
 [dependencies]
+# roxmltree 0.21 (MIT OR Apache-2.0, no dependency): the read-only XML tree of the SCL parser (task S1, D-018).
+roxmltree = { version = "0.21", optional = true }
 # The MMS codec of igs-iso9506-mms: the MMS values and type descriptions the ACSI types map to (task A2).
 igs-iso9506-mms-codec = { path = "../../../igs-iso9506-mms/crates/igs-iso9506-mms-codec", version = "1.1.0" }
 

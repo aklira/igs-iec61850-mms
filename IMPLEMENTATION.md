@@ -539,7 +539,7 @@ The agent does not wait for these; it records the impact and continues with what
 | A5 Application event path and clock source | [x] |
 | A6 Client discovery and data access | [x] |
 | A7 Data-access interop | [x] |
-| S1 Parser and bounds | [ ] |
+| S1 Parser and bounds | [x] |
 | S2 Semantic checks and templates | [ ] |
 | S3 Model and communication parameters from SCL | [ ] |
 | D1 Static datasets | [ ] |
