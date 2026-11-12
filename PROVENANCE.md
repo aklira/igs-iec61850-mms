@@ -276,6 +276,49 @@ silent, to be confirmed by an observation test against other implementations.
 - **Test**: `served_writes.rs` (`the_directory_of_a_data_object_lists_its_attributes`); `served_model.rs`
   (`get_variable_access_attributes_gives_the_type_of_each_level`, `get_name_list_lists_the_node_and_its_flattened_names`).
 
+### D-014 — The clock sources: the quality is declared by the application or the operator (task A5)
+
+- **Decision**: the timestamps come from a `ClockSource` (core `time`), which returns the UTC time with its quality. The
+  host clock (async `clock`) reads the system time, and it reports the quality declared for the host: synchronised or
+  not, leap-second knowledge, and the accuracy of the synchronisation. The default is *not synchronised* with no
+  declared accuracy, so a host whose state was not declared stamps its values as such. A quality that the octet cannot
+  carry (accuracy above 24 bits) is refused at the clock (`ClockError::InvalidAccuracy`), and the reading stays.
+- **Why**: TIME-001 forbids stamping with a clock whose state is not reported. The crate cannot verify the synchronisation
+  of a host without an unsafe interface or a platform service, so the declaration is the operator's, and it is recorded
+  in the PIXIT of the device (TIME-002). A stamp that would be refused by the reader is refused at the source.
+- **Not implemented**: an embedded SNTP client (TIME-002, optional when the host synchronisation is declared) and the
+  derivation of the accuracy from the root dispersion (TIME-003, which only applies to SNTP). They are gaps in
+  `docs/capabilities.md`. PTP is not implemented.
+- **Confidence**: high for the bit layout of the quality (Annex F.3.1, tested per flag) and for the refusal of accuracy
+  above 24 bits; medium for the declared-quality reading of TIME-002, which the standard leaves to the PIXIT.
+- **Test**: `crates/igs-iec61850-mms-core/tests/time.rs` (each flag at its bit, round trips, the accuracy bound, the loss and
+  the recovery of synchronisation); `crates/igs-iec61850-mms/tests/clock.rs` (the default, the declared quality, the time).
+
+### D-015 — The application's updates: one node per update, all or nothing, with a revision (task A5)
+
+- **Decision**: the application changes values, qualities and timestamps through an `Updater`, which is cloned and used
+  from any task. An update holds the changes of one logical node; it checks every change (the name, the type, the defined
+  enumeration values, one node), applies them to a copy of the node's value, and stores the copy under the node's lock.
+  Each node has a revision that goes up by one with each change, from the application or from a client. The update
+  returns the revision.
+- **Snapshot rules (MODEL-006)**: a read of one item, and a read of a data object, are one state of the node; a value,
+  its quality and its timestamp that one update changed are read together. A Read of several items takes each item at
+  its own moment, and a consistent view of several nodes is the job of a data set or a report, which build on the
+  revision. Reports and data sets are not implemented yet (tasks D and B).
+- **Event ordering**: the revisions of one node are ordered by the lock; the revisions of different nodes are not ordered
+  among themselves.
+- **Non-blocking**: the lock covers a copy and a store of the node's value. No I/O and no wait for an association happens
+  under it, so an application task does not wait for the network. An update does not queue: it applies at once or is
+  refused.
+- **Why**: a per-node lock gives the consistency that reads need (value, quality and time together) at the smallest cost,
+  and the revision gives the order that the reports will need (RUN-004 and MODEL-006). A channel to a separate model task
+  would delay each update to the next poll of that task, and the MMS server already reads the node under its lock.
+- **Confidence**: high for the atomicity and the refusals (tests); medium for the statement that the lock is short under
+  the report load, which is measured with the reporting tasks (S4 and V3 in the plan).
+- **Test**: `crates/igs-iec61850-mms/tests/updates.rs` (one state for a value, quality and time; a refused update changes
+  nothing and takes no revision; the types, the enumerations and the single node; a reader that never sees a value without
+  the time of its update, with 300 updates running against 300 reads).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

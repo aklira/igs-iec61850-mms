@@ -28,3 +28,16 @@ settles it. A gap is an item that is refused or reported explicitly, never serve
 | Directory and definition (GetDataDirectory, GetDataDefinition, logical-node directory) | Served by GetVariableAccessAttributes and GetNameList; the logical-node filter is the client's (A6) | D-013 |
 | Alternate access | Refused item by item; `valt` is negotiated | D-009 |
 | Application extensions (the `EX` constraint, extension classes) | Not accepted | D-007 |
+
+## Time and application updates (task A5)
+
+| Item | State | Decision |
+| --- | --- | --- |
+| Timestamps with their quality (leap-second knowledge, clock failure, not synchronised, accuracy 0 to 24 or unspecified) | Served; refused above 24 bits at the clock | D-014 |
+| Host clock with a declared quality (default: not synchronised) | Served | D-014 |
+| Embedded SNTP client (TIME-002) | Not implemented; the host synchronisation is declared instead | D-014 |
+| Accuracy from the root dispersion (TIME-003) | Not applicable without SNTP | D-014 |
+| PTP (IEC/IEEE 61850-9-3) | Not implemented | D-014 |
+| Application updates of values, qualities and timestamps | Served, per logical node, all or nothing, with a revision | D-015 |
+| Snapshot of several items of one Read | Not one state: each item at its own moment | D-015, MODEL-006 |
+| Consistent view of several nodes | Through data sets and reports (tasks D and B), not yet | D-015 |

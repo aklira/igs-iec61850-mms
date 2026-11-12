@@ -15,6 +15,7 @@
 use std::time::Duration;
 
 use igs_iec61850_mms::model::{client_config, server_config, ServedModel};
+use igs_iec61850_mms::updates::Updater;
 use igs_iec61850_mms_core::catalogue;
 use igs_iec61850_mms_core::model::{
     is_required, DataObjectSpec, LogicalDevice, LogicalNode, ServerModel,
@@ -82,7 +83,14 @@ pub fn identity() -> Identity {
 
 /// Starts the served model and connects a client to it, both on the IEC 61850 profile.
 pub async fn start() -> (Server, Client) {
+    let (server, client, _updater) = start_with_updater().await;
+    (server, client)
+}
+
+/// As [`start`], with the updater of the application.
+pub async fn start_with_updater() -> (Server, Client, Updater) {
     let served = ServedModel::new(&model(), identity()).expect("the model is served");
+    let updater = served.updater();
     let server = Server::bind_model("127.0.0.1:0", server_config(LinkConfig::default()), served)
         .await
         .expect("the server binds");
@@ -93,7 +101,7 @@ pub async fn start() -> (Server, Client) {
             .await
             .expect("the association is established in time")
             .expect("the association is accepted");
-    (server, client)
+    (server, client, updater)
 }
 
 fn never_reconnect(config: igs_iso9506_mms::ClientConfig) -> igs_iso9506_mms::ClientConfig {

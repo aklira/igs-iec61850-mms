@@ -9,6 +9,7 @@
 //! views of it, by path, so that a name and the node always show the same value. The variables are read-only until
 //! the write guard of the data access (task A4, MODEL-005) decides which attributes accept a write.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +17,8 @@ use igs_iec61850_mms_core::model::layout::{
     defines_enumerations, layout, set_at, value_at, DefinedValues, IDENTIFIER_LIMIT,
 };
 use igs_iec61850_mms_core::model::{ModelError, ServerModel};
+
+use crate::updates::{Point, Updater};
 use igs_iso9506_mms::client::{in_scope_capabilities, ClientConfig};
 use igs_iso9506_mms::server::{Model, Peer};
 use igs_iso9506_mms::vmd::{Error as VmdError, Identity, NameError, Target, Variable, Vmd};
@@ -104,9 +107,17 @@ impl From<VmdError> for ServeError {
     }
 }
 
+/// The value of a logical node, shared by its named variable and its flattened names, with the revision of its last
+/// change: a value and its revision are read and changed under one lock (MODEL-006).
+#[derive(Debug)]
+pub(crate) struct NodeValue {
+    pub(crate) data: Data,
+    pub(crate) revision: u64,
+}
+
 /// A named variable of a logical node: a path into the value of the node, and what a write may do to it (A4).
 struct NodeVariable {
-    root: Arc<Mutex<Data>>,
+    root: Arc<Mutex<NodeValue>>,
     path: Vec<usize>,
     ty: TypeDescription,
     writable: bool,
@@ -123,11 +134,11 @@ impl Variable for NodeVariable {
     }
 
     fn read(&self) -> Result<Data, DataAccessError> {
-        let root = self
+        let state = self
             .root
             .lock()
             .map_err(|_| DataAccessError::TEMPORARILY_UNAVAILABLE)?;
-        value_at(&root, &self.path)
+        value_at(&state.data, &self.path)
             .cloned()
             .ok_or(DataAccessError::OBJECT_VALUE_INVALID)
     }
@@ -141,31 +152,54 @@ impl Variable for NodeVariable {
         if !defines_enumerations(&value, &self.enumerations) {
             return Err(DataAccessError::OBJECT_VALUE_INVALID);
         }
-        let mut root = self
+        let mut state = self
             .root
             .lock()
             .map_err(|_| DataAccessError::TEMPORARILY_UNAVAILABLE)?;
-        if set_at(&mut root, &self.path, value) {
-            Ok(())
-        } else {
-            Err(DataAccessError::OBJECT_NON_EXISTENT)
+        if !set_at(&mut state.data, &self.path, value) {
+            return Err(DataAccessError::OBJECT_NON_EXISTENT);
         }
+        state.revision = state.revision.saturating_add(1);
+        Ok(())
     }
 }
 
-/// The VMD of a server model: one domain per logical device, and per logical node its named variable and its
-/// flattened names, all within the identifier limit of the IEC 61850 profile.
-pub fn serve(server: &ServerModel, identity: Identity) -> Result<Vmd, ServeError> {
+/// The served model of a server: the VMD that answers the services, and the updater that the application uses.
+pub struct Served {
+    /// The VMD that answers the services of the associations.
+    pub vmd: Vmd,
+    /// The handle of the application's updates to the values, qualities and timestamps (task A5).
+    pub updater: Updater,
+}
+
+/// The VMD of a server model: one domain per logical device, and per logical node its named variable and its flattened
+/// names, all within the identifier limit of the IEC 61850 profile; and the updater over the same values.
+pub fn serve(server: &ServerModel, identity: Identity) -> Result<Served, ServeError> {
     let mut vmd = Vmd::new(identity).with_identifier_limit(IDENTIFIER_LIMIT)?;
+    let mut points = BTreeMap::new();
     for device in server.devices() {
         let domain = vmd.name(device.name().as_str())?;
         vmd.add_domain(domain.clone())?;
         for node in device.nodes() {
             let node_layout = layout(node, IDENTIFIER_LIMIT)?;
-            let root = Arc::new(Mutex::new(node_layout.root_value));
+            let root = Arc::new(Mutex::new(NodeValue {
+                data: node_layout.root_value,
+                revision: 0,
+            }));
+            let node_name = format!("{}/{}", device.name(), node.name());
             for variable in node_layout.variables {
                 let item = vmd.name(&variable.name)?;
                 let target = Target::in_domain(domain.clone(), item);
+                points.insert(
+                    format!("{}/{}", device.name(), variable.name),
+                    Point {
+                        node: node_name.clone(),
+                        root: Arc::clone(&root),
+                        path: variable.path.clone(),
+                        ty: variable.ty.clone(),
+                        enumerations: variable.enumerations.clone(),
+                    },
+                );
                 let view = NodeVariable {
                     root: Arc::clone(&root),
                     path: variable.path,
@@ -177,25 +211,36 @@ pub fn serve(server: &ServerModel, identity: Identity) -> Result<Vmd, ServeError
             }
         }
     }
-    Ok(vmd)
+    Ok(Served {
+        vmd,
+        updater: Updater::new(points),
+    })
 }
 
 /// A server model served on MMS: the VMD of [`serve`], answering the services of its associations.
 pub struct ServedModel {
     vmd: Vmd,
+    updater: Updater,
 }
 
 impl ServedModel {
     /// The served model of a server model.
     pub fn new(server: &ServerModel, identity: Identity) -> Result<Self, ServeError> {
+        let served = serve(server, identity)?;
         Ok(Self {
-            vmd: serve(server, identity)?,
+            vmd: served.vmd,
+            updater: served.updater,
         })
     }
 
     /// The VMD that answers the services.
     pub fn vmd(&self) -> &Vmd {
         &self.vmd
+    }
+
+    /// The handle of the application's updates. It can be cloned and used from other tasks.
+    pub fn updater(&self) -> Updater {
+        self.updater.clone()
     }
 }
 
