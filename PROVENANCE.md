@@ -607,6 +607,47 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the layout (vectors from the tables); medium for the choice of one trigger per notice and for the reading of the
   dupd trigger, which the attributes of the catalogue give; to be confronted with a reference client in D6.
 
+### D-026 — The MMS mapping of the controls: services as writes and reads, the answers, and the sequences (task K2; CTL-001, CTL-002, CTL-004)
+
+- **Mapping** (8-1 §20.4, tables 94 to 100 and 109): Select is a read of `SBO` (positive: the object reference `LD/LN$CO$DO`; negative: the NULL
+  value); SelectWithValue a write of `SBOw`; Operate a write of `Oper`; Cancel a write of `Cancel`. Each write carries the structure of table 94:
+  `ctlVal`, `origin`, `ctlNum`, `T`, `Test`, `Check`. The optional `operTm` is absent: TimeActivatedOperate is declared unsupported (no
+  `operTm` component, and no time-activated operation is accepted). A select read of an object that is not controllable is a NULL value.
+- **Answers**: a positive write is `Success`. A negative write is a `DataAccessError` (table 100) and, for the services of table 95, a
+  `LastApplError` (an `InformationReport` on the VMD list `LastApplError`, table 109) to the client that wrote. The `CommandTermination` is an
+  `InformationReport` on `LN$CO$DO$Oper` with the structure of the operation (table 105); a failed command sends `LastApplError` instead. The
+  `Error` component is `Operator Test Not OK` (3) for a failed test, `No Error` (0) otherwise; the additional cause is the value of the
+  catalogue enumeration `ControlServiceStatusKind`.
+- **Access results (table 100)**: the prepared text gives the rows TEMPORARILY-UNAVAILABLE (already selected or being operated), HARDWARE-FAULT
+  and OBJECT-ACCESS-DENIED, and no more: its last rows are cut. The mapping used: a selection held by another client, a command in execution,
+  or a locked object is TEMPORARILY-UNAVAILABLE; an inconsistent parameter is OBJECT-ATTRIBUTE-INCONSISTENT; any other refusal is
+  OBJECT-ACCESS-DENIED. To confirm against the complete table 100 (the text of the rows is missing from the prepared text).
+- **Checks and execution** (CTL-003): the machine asks the application for its checks (operative, dynamic, selection) through `ControlHandler`,
+  answered synchronously; the output is activated through `ControlHandler::execute`. The default accepts every check. The deferred outcomes
+  are K3.
+- **Status change**: an enhanced model ends its command when the status (`node$ST$do$stVal`) of the object changes (a notice of the updater with a
+  change), or at the operate timeout (`operTimeout`, negative: `Time-limit-over`).
+- **Control objects**: each data object whose `ctlModel` is not status-only is a control object, with its parameters from the configuration
+  (`sboClass`, `sboTimeout`, `operTimeout`, and the behaviour `Beh$stVal`). The defaults are 10 s, 3 s, and behaviour `On` (a value
+  missing from the configuration takes these defaults; the values are the 2007B attributes of the data objects).
+- **Sequence of a normal-security selection (correction of K1)**: the select of a normal-security object is a read without parameters, so its
+  sequence is unspecified; the first operation fixes its origin, its test flag and its control value. The K1 test that expected the origin of the
+  select to be checked is rewritten on the enhanced model, where the select carries its parameters; a test of the normal selection is added.
+- **Initial values (correction of S3, D-022)**: a `Val` of a basic data attribute directly under its data object is kept by the configuration and
+  applied to the served model at its MMS type (`ctlModel`, `sboTimeout`, `Beh$stVal` are such values). The values nested in a structure remain refused.
+- **Not in K2**: the reports of the `LastApplError` precede the write response in the standard, and here they follow it (the next poll): the client
+  matches them with the origin and the control number. The `T` of the operation is copied from the request into the termination; its timestamp is
+  not checked. A control object of an other logical device of the IED is served by its device only. The time-activated operate (§20.10) is
+  refused.
+- **Test**: `igs-iec61850-mms/tests/controls.rs` (9 tests with the served configuration, the network clients and the MMS writes and reads): a direct
+  normal operate without selection; a select-before-operate refused without selection, with `LastApplError` (`Object-not-selected`); a selection of
+  one client refused to another (NULL select, temporarily unavailable operate); an enhanced select with value and operate ending with the status
+  change; an enhanced operate ending negatively at the operate timeout; an interlock of the application refusing the operate with its cause;
+  an object without control model not a control object; a cancel releasing the selection; the close of the selecting client releasing it.
+  `igs-iec61850-mms-core/tests/control.rs` (32 tests: the state machine, with the normal selection test added).
+- **Confidence**: high for the state machine (figures and clauses of K1, the sequence correction read from 7-2 §20.5.2); medium for the table 100
+  mapping (the complete table is missing from the prepared text); to confirm with a reference client in D6 and K3.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

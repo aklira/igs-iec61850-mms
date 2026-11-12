@@ -125,6 +125,20 @@ struct Pending {
     line: u32,
 }
 
+/// An initial value of a basic data attribute of the IED (a `Val` of a `DAI`): the logical device and node, the served name of
+/// the attribute (`LN$FC$DO$DA`), and the text of the value, which the served model converts with the type of the attribute.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstanceValue {
+    /// The logical device.
+    pub device: String,
+    /// The logical node.
+    pub node: String,
+    /// The served name of the attribute, within the device.
+    pub variable: String,
+    /// The text of the value.
+    pub text: String,
+}
+
 /// An unbuffered report control block of the IED: its logical device and node, its name, and its configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportDecl {
@@ -149,6 +163,8 @@ pub struct Configuration {
     pub data_sets: Vec<DataSet>,
     /// The unbuffered report control blocks, in document order.
     pub reports: Vec<ReportDecl>,
+    /// The initial values of the basic data attributes, in document order.
+    pub values: Vec<InstanceValue>,
     /// The address parameters of the connections of the IED.
     pub addresses: Vec<Address>,
 }
@@ -168,6 +184,7 @@ pub fn build(
         diagnostics: Vec::new(),
         pending: Vec::new(),
         reports: Vec::new(),
+        values: Vec::new(),
     };
     let Some(ied_element) = root
         .children
@@ -242,12 +259,14 @@ pub fn build(
     let addresses = builder.addresses(root, ied);
     let data_sets = builder.resolve_data_sets(&model);
     let reports = std::mem::take(&mut builder.reports);
+    let values = std::mem::take(&mut builder.values);
     builder.finish()?;
     Ok(Configuration {
         ied: ied.to_string(),
         model,
         data_sets,
         reports,
+        values,
         addresses,
     })
 }
@@ -258,6 +277,7 @@ struct Builder<'a> {
     diagnostics: Vec<Diagnostic>,
     pending: Vec<Pending>,
     reports: Vec<ReportDecl>,
+    values: Vec<InstanceValue>,
 }
 
 impl Builder<'_> {
@@ -451,7 +471,7 @@ impl Builder<'_> {
                 .collect();
             specs.push(DataObjectSpec::new(object_name).with_attributes(attributes));
         }
-        self.instances(node, path, ln_type, templates);
+        self.instances(node, path, ln_type, templates, device_inst, &name);
 
         let logical = match LogicalNode::new(&name, class, &specs) {
             Ok(logical) => logical,
@@ -479,6 +499,8 @@ impl Builder<'_> {
         path: &str,
         ln_type: &Element,
         templates: &Templates<'_>,
+        device_inst: &str,
+        node_name: &str,
     ) {
         for instance in node.children.iter().filter(|child| child.name == "DOI") {
             let instance_path = segment(path, instance);
@@ -520,15 +542,42 @@ impl Builder<'_> {
                     );
                 }
                 if carries_value(attribute) {
-                    self.report(
-                        "SCL-003",
-                        attribute,
-                        &attribute_path,
-                        format!(
-                            "the instance value of {attribute_name} is not built by this server: \
-                             the value would be lost"
+                    // A value of a basic data attribute, directly under its data object, is an initial value of the
+                    // served model (the updater applies it, with the type of the attribute). Other values are refused.
+                    let direct = attribute
+                        .children
+                        .iter()
+                        .find(|child| child.name == "Val")
+                        .filter(|_| attribute.name == "DAI");
+                    let definition = do_type.and_then(|ty| {
+                        ty.children.iter().find(|member| {
+                            member.name == "DA" && member.attribute("name") == Some(attribute_name)
+                        })
+                    });
+                    match (direct, definition) {
+                        (Some(value), Some(definition))
+                            if definition.attribute("bType") != Some("Struct") =>
+                        {
+                            let constraint = definition.attribute("fc").unwrap_or_default();
+                            self.values.push(InstanceValue {
+                                device: device_inst.to_string(),
+                                node: node_name.to_string(),
+                                variable: format!(
+                                    "{node_name}${constraint}${object_name}${attribute_name}"
+                                ),
+                                text: value.text.clone(),
+                            });
+                        }
+                        _ => self.report(
+                            "SCL-003",
+                            attribute,
+                            &attribute_path,
+                            format!(
+                                "the instance value of {attribute_name} is not built by this server: \
+                                 only a basic data attribute directly under its data object is"
+                            ),
                         ),
-                    );
+                    }
                 }
             }
         }

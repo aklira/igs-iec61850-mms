@@ -39,39 +39,57 @@ pub enum State {
 }
 
 /// The sequence of a selection or of an operation: its origin, its test flag and its control value. The first request
-/// that carries a control value fixes it.
+/// that carries each of them fixes it. A normal-security selection carries none of them (its select is a read of `SBO`), so
+/// its sequence is unspecified until its operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Sequence {
     ctl_val: Option<Data>,
-    origin: Originator,
-    test: bool,
+    origin: Option<Originator>,
+    test: Option<bool>,
 }
 
 impl Sequence {
+    /// The sequence of a request that carries its parameters.
     fn of(parameters: &Parameters) -> Self {
         Self {
             ctl_val: parameters.ctl_val.clone(),
-            origin: parameters.origin.clone(),
-            test: parameters.test,
+            origin: Some(parameters.origin.clone()),
+            test: Some(parameters.test),
         }
     }
 
-    /// Whether a request belongs to this sequence: the same origin and test flag, and the same value where the sequence
-    /// has one. A sequence without a value (a normal-security selection) takes the value of its first operation.
+    /// The sequence of a selection that carries no parameters.
+    fn unspecified() -> Self {
+        Self {
+            ctl_val: None,
+            origin: None,
+            test: None,
+        }
+    }
+
+    /// Whether a request belongs to this sequence: the same origin, test flag and value, where the sequence has them.
     fn accepts(&self, parameters: &Parameters) -> bool {
-        self.origin == parameters.origin
-            && self.test == parameters.test
+        self.origin
+            .as_ref()
+            .is_none_or(|origin| *origin == parameters.origin)
+            && self.test.is_none_or(|test| test == parameters.test)
             && self
                 .ctl_val
                 .as_ref()
                 .is_none_or(|value| parameters.ctl_val.as_ref() == Some(value))
     }
 
-    /// The sequence with the value of a request, when it has none yet.
+    /// The sequence with the parameters of a request, for those it does not have yet.
     fn adopting(&self, parameters: &Parameters) -> Self {
         let mut next = self.clone();
         if next.ctl_val.is_none() {
             next.ctl_val.clone_from(&parameters.ctl_val);
+        }
+        if next.origin.is_none() {
+            next.origin = Some(parameters.origin.clone());
+        }
+        if next.test.is_none() {
+            next.test = Some(parameters.test);
         }
         next
     }
@@ -198,7 +216,12 @@ impl ControlObject {
                         refuse(AddCause::INCONSISTENT_PARAMETERS),
                     )];
                 }
-                let sequence = Sequence::of(&parameters);
+                // A normal-security select is a read without parameters: its sequence is fixed by its operation.
+                let sequence = if self.config.model.enhanced() {
+                    Sequence::of(&parameters)
+                } else {
+                    Sequence::unspecified()
+                };
                 let check = parameters.check;
                 let ctl_val = parameters.ctl_val.clone();
                 self.pending = Some(Pending {

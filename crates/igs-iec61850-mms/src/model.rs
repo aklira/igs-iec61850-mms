@@ -12,13 +12,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use igs_iec61850_mms_core::model::layout::{
     defines_enumerations, layout, set_at, value_at, DefinedValues, IDENTIFIER_LIMIT,
 };
 use igs_iec61850_mms_core::model::{ModelError, ServerModel};
 
+use crate::control::{AcceptAll, ControlHandler, Controls};
 #[cfg(feature = "scl")]
 use crate::reports::{Block, Wire};
 use crate::reports::{ReportState, Reports};
@@ -28,9 +29,11 @@ use igs_iso9506_mms::server::{Model, Outbound, Peer};
 use igs_iso9506_mms::vmd::{Error as VmdError, Identity, NameError, Target, Variable, Vmd};
 use igs_iso9506_mms::ServerConfig;
 use igs_iso9506_mms_codec::generated::types::{
-    ConfirmedServiceRequest, ConfirmedServiceResponse, Data, DataAccessError,
+    AccessResult, ConfirmedServiceRequest, ConfirmedServiceResponse, Data, DataAccessError,
     DeleteNamedVariableListRequest, DeleteNamedVariableListRequestScopeOfDelete, ObjectName,
-    ServiceError, ServiceErrorErrorClass, ServiceErrorErrorClassAccess, TypeDescription,
+    ReadRequest, ReadResponse, ServiceError, ServiceErrorErrorClass, ServiceErrorErrorClassAccess,
+    TypeDescription, VariableAccessSpecification, VariableSpecification, WriteRequest,
+    WriteResponse, WriteResponseItemItem,
 };
 use igs_iso9506_mms_codec::mms::profile::{Model as AcsiModel, Profile};
 use igs_iso9506_mms_link::config::LinkConfig;
@@ -82,6 +85,8 @@ pub enum ServeError {
     Vmd(VmdError),
     /// A report of the configuration refers to a variable that is not served, or to a data set that is not in the configuration.
     Report(String),
+    /// An initial value of the configuration does not have the type of its attribute, or is not an attribute of the model.
+    Value(String),
 }
 
 impl fmt::Display for ServeError {
@@ -90,6 +95,7 @@ impl fmt::Display for ServeError {
             Self::Model(error) => write!(f, "the model is not valid: {error}"),
             Self::Name(error) => write!(f, "a name cannot be served: {error}"),
             Self::Vmd(_) => write!(f, "the VMD refused an object of the model"),
+            Self::Value(name) => write!(f, "the initial value of {name} does not have its type"),
             Self::Report(name) => write!(
                 f,
                 "a report refers to {name}, which the model does not serve"
@@ -234,6 +240,10 @@ pub struct ServedModel {
     updater: Updater,
     /// The unbuffered blocks of the reports, shared with the application's handle.
     reports: Arc<Mutex<ReportState>>,
+    /// The control objects of the controllable data objects (task K2).
+    controls: Controls,
+    /// The origin of the clock of the controls and the reports of this model.
+    origin: Instant,
     /// The static data sets, as (device, name): the named variable lists of the configuration, which no client deletes.
     static_lists: BTreeSet<(String, String)>,
 }
@@ -246,6 +256,8 @@ impl ServedModel {
             vmd: served.vmd,
             updater: served.updater,
             reports: Arc::new(Mutex::new(ReportState::new())),
+            controls: Controls::new(Box::new(AcceptAll)),
+            origin: Instant::now(),
             static_lists: BTreeSet::new(),
         })
     }
@@ -303,10 +315,13 @@ impl ServedModel {
                 wires,
             ));
         }
+        let controls = configured_controls(configuration, &updater)?;
         Ok(Self {
             vmd,
             updater,
             reports: Arc::new(Mutex::new(state)),
+            controls,
+            origin: Instant::now(),
             static_lists,
         })
     }
@@ -357,6 +372,13 @@ impl ServedModel {
     pub fn reports(&self) -> Reports {
         Reports::new(Arc::clone(&self.reports))
     }
+
+    /// The checks and the execution of the controls are the application's: `handler` makes them (task K2, CTL-003).
+    #[must_use]
+    pub fn with_control_handler(mut self, handler: impl ControlHandler) -> Self {
+        self.controls.set_handler(Box::new(handler));
+        self
+    }
 }
 
 impl Model for ServedModel {
@@ -368,20 +390,49 @@ impl Model for ServedModel {
     }
 
     fn released(&mut self, peer: &Peer) {
+        let now = self.origin.elapsed();
+        self.controls.released(now, peer.id);
         if let Ok(mut state) = self.reports.lock() {
             state.released(peer.id);
         }
     }
 
     fn poll(&mut self, _now: Duration) -> Vec<Outbound> {
+        let now = self.origin.elapsed();
         let (notices, dropped) = self.updater.take_notices();
-        match self.reports.lock() {
-            Ok(mut state) => state.poll(notices, dropped),
-            Err(_) => Vec::new(),
+        let changed: Vec<String> = notices
+            .iter()
+            .filter(|notice| notice.changed)
+            .map(|notice| notice.name.clone())
+            .collect();
+        let mut outbound = self.controls.poll(now, &changed);
+        if let Ok(mut state) = self.reports.lock() {
+            outbound.extend(state.poll(notices, dropped));
         }
+        outbound
     }
 
     fn dispatch(
+        &mut self,
+        peer: &Peer,
+        service: ConfirmedServiceRequest,
+    ) -> Result<ConfirmedServiceResponse, ServiceError> {
+        let now = self.origin.elapsed();
+        match service {
+            ConfirmedServiceRequest::Read(request) if self.has_control_read(&request) => {
+                self.read_with_controls(peer, now, request)
+            }
+            ConfirmedServiceRequest::Write(request) if self.has_control_write(&request) => {
+                self.write_with_controls(peer, now, request)
+            }
+            service => self.dispatch_vmd(peer, service),
+        }
+    }
+}
+
+impl ServedModel {
+    /// The services of the VMD, after the checks of the static data sets.
+    fn dispatch_vmd(
         &mut self,
         peer: &Peer,
         service: ConfirmedServiceRequest,
@@ -399,5 +450,240 @@ impl Model for ServedModel {
             }
         }
         <Vmd as Model>::dispatch(&mut self.vmd, peer, service)
+    }
+
+    /// Whether a read asks for a select (an `SBO` of a control object).
+    fn has_control_read(&self, request: &ReadRequest) -> bool {
+        match &request.variable_access_specification {
+            VariableAccessSpecification::ListOfVariable(items) => items.iter().any(|item| {
+                matches!(&item.variable_specification,
+                    VariableSpecification::Name(name) if self.controls.item(name, true).is_some())
+            }),
+            VariableAccessSpecification::VariableListName(_) => false,
+        }
+    }
+
+    /// Whether a write names a component of a control object (`SBOw`, `Oper`, `Cancel`).
+    fn has_control_write(&self, request: &WriteRequest) -> bool {
+        match &request.variable_access_specification {
+            VariableAccessSpecification::ListOfVariable(items) => items.iter().any(|item| {
+                matches!(&item.variable_specification,
+                    VariableSpecification::Name(name) if self.controls.item(name, false).is_some())
+            }),
+            VariableAccessSpecification::VariableListName(_) => false,
+        }
+    }
+
+    /// A read with selects: each `SBO` is a select of its object; the other items are read by the VMD, and the answers keep the
+    /// order of the items.
+    fn read_with_controls(
+        &mut self,
+        peer: &Peer,
+        now: Duration,
+        request: ReadRequest,
+    ) -> Result<ConfirmedServiceResponse, ServiceError> {
+        let VariableAccessSpecification::ListOfVariable(items) =
+            &request.variable_access_specification
+        else {
+            return self.dispatch_vmd(peer, ConfirmedServiceRequest::Read(request));
+        };
+        let mut answers: Vec<Option<AccessResult>> = vec![None; items.len()];
+        let mut rest_items = Vec::new();
+        let mut rest_index = Vec::new();
+        for (index, item) in items.iter().enumerate() {
+            let control = match &item.variable_specification {
+                VariableSpecification::Name(name) => self.controls.item(name, true),
+                _ => None,
+            };
+            match control {
+                Some((object, _)) => {
+                    if let Some(slot) = answers.get_mut(index) {
+                        *slot = Some(self.controls.select_read(now, peer.id, object));
+                    }
+                }
+                None => {
+                    rest_items.push(item.clone());
+                    rest_index.push(index);
+                }
+            }
+        }
+        if !rest_items.is_empty() {
+            let rest = ReadRequest {
+                specification_with_result: request.specification_with_result,
+                variable_access_specification: VariableAccessSpecification::ListOfVariable(
+                    rest_items,
+                ),
+            };
+            if let ConfirmedServiceResponse::Read(response) =
+                self.dispatch_vmd(peer, ConfirmedServiceRequest::Read(rest))?
+            {
+                for (position, result) in response.list_of_access_result.into_iter().enumerate() {
+                    if let Some(index) = rest_index.get(position) {
+                        if let Some(slot) = answers.get_mut(*index) {
+                            *slot = Some(result);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(ConfirmedServiceResponse::Read(ReadResponse {
+            variable_access_specification: None,
+            list_of_access_result: answers.into_iter().flatten().collect(),
+        }))
+    }
+
+    /// A write with components of control objects: each is a control request of its object, and the other items are written by
+    /// the VMD. The answers keep the order of the items.
+    fn write_with_controls(
+        &mut self,
+        peer: &Peer,
+        now: Duration,
+        request: WriteRequest,
+    ) -> Result<ConfirmedServiceResponse, ServiceError> {
+        let VariableAccessSpecification::ListOfVariable(items) =
+            &request.variable_access_specification
+        else {
+            return self.dispatch_vmd(peer, ConfirmedServiceRequest::Write(request));
+        };
+        if items.len() != request.list_of_data.len() {
+            return self.dispatch_vmd(peer, ConfirmedServiceRequest::Write(request));
+        }
+        let mut answers: Vec<Option<WriteResponseItemItem>> = vec![None; items.len()];
+        let mut rest_items = Vec::new();
+        let mut rest_data = Vec::new();
+        let mut rest_index = Vec::new();
+        for (index, (item, data)) in items.iter().zip(request.list_of_data.iter()).enumerate() {
+            let control = match &item.variable_specification {
+                VariableSpecification::Name(name) => self.controls.item(name, false),
+                _ => None,
+            };
+            match control {
+                Some((object, component)) => {
+                    let answer = self.controls.write(now, peer.id, object, component, data);
+                    if let Some(slot) = answers.get_mut(index) {
+                        *slot = Some(answer);
+                    }
+                }
+                None => {
+                    rest_items.push(item.clone());
+                    rest_data.push(data.clone());
+                    rest_index.push(index);
+                }
+            }
+        }
+        if !rest_items.is_empty() {
+            let rest = WriteRequest {
+                variable_access_specification: VariableAccessSpecification::ListOfVariable(
+                    rest_items,
+                ),
+                list_of_data: rest_data,
+            };
+            if let ConfirmedServiceResponse::Write(WriteResponse(results)) =
+                self.dispatch_vmd(peer, ConfirmedServiceRequest::Write(rest))?
+            {
+                for (position, result) in results.into_iter().enumerate() {
+                    if let Some(index) = rest_index.get(position) {
+                        if let Some(slot) = answers.get_mut(*index) {
+                            *slot = Some(result);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(ConfirmedServiceResponse::Write(WriteResponse(
+            answers.into_iter().flatten().collect(),
+        )))
+    }
+}
+
+/// The controls of a configuration: a control object for each data object whose `ctlModel` is not status-only, with its
+/// configured parameters; the initial values of the configuration are applied to the served model first (the updater converts
+/// each with the MMS type of its attribute, and checks it).
+#[cfg(feature = "scl")]
+fn configured_controls(
+    configuration: &igs_iec61850_mms_core::scl::build::Configuration,
+    updater: &Updater,
+) -> Result<Controls, ServeError> {
+    let mut by_node: BTreeMap<(String, String), Vec<crate::updates::Change>> = BTreeMap::new();
+    for value in &configuration.values {
+        let name = format!("{}/{}", value.device, value.variable);
+        let kind = updater
+            .kind(&name)
+            .ok_or_else(|| ServeError::Value(value.variable.clone()))?;
+        let data = data_from_text(&kind, &value.text)
+            .ok_or_else(|| ServeError::Value(value.variable.clone()))?;
+        by_node
+            .entry((value.device.clone(), value.node.clone()))
+            .or_default()
+            .push(crate::updates::Change::new(name, data));
+    }
+    for changes in by_node.values() {
+        updater.update(changes).map_err(|_| {
+            ServeError::Value(
+                changes
+                    .first()
+                    .map(|c| c.name().to_string())
+                    .unwrap_or_default(),
+            )
+        })?;
+    }
+    let text_of = |device: &str, name: &str| {
+        configuration
+            .values
+            .iter()
+            .find(|other| other.device == device && other.variable == name)
+            .map(|other| other.text.clone())
+    };
+    let number_of =
+        |device: &str, name: &str| text_of(device, name).and_then(|text| text.parse::<i64>().ok());
+    let mut controls = Controls::new(Box::new(AcceptAll));
+    for value in &configuration.values {
+        let parts: Vec<&str> = value.variable.split('$').collect();
+        let [node, constraint, object, attribute] = parts.as_slice() else {
+            continue;
+        };
+        if *constraint != "CF" || *attribute != "ctlModel" {
+            continue;
+        }
+        let Some(ctl_model) = value.text.parse::<i64>().ok() else {
+            continue;
+        };
+        let timeout = |name: &str| {
+            number_of(&value.device, &format!("{node}$CF${object}${name}"))
+                .and_then(|millis| u64::try_from(millis).ok())
+        };
+        let config = crate::control::control_config(
+            ctl_model,
+            number_of(&value.device, &format!("{node}$CF${object}$sboClass")),
+            timeout("sboTimeout"),
+            timeout("operTimeout"),
+            number_of(&value.device, &format!("{node}$ST$Beh$stVal")),
+        );
+        if let Some(config) = config {
+            controls.add(
+                &value.device,
+                node,
+                object,
+                config,
+                format!("{node}$ST${object}$stVal"),
+            );
+        }
+    }
+    Ok(controls)
+}
+
+/// The data of an initial value, from its text and the MMS type of its attribute. `None` when the text does not have that type.
+#[cfg(feature = "scl")]
+fn data_from_text(kind: &TypeDescription, text: &str) -> Option<Data> {
+    match kind {
+        TypeDescription::Boolean => match text {
+            "true" | "1" => Some(Data::Boolean(true)),
+            "false" | "0" => Some(Data::Boolean(false)),
+            _ => None,
+        },
+        TypeDescription::Integer(_) => text.parse::<i128>().ok().map(Data::Integer),
+        TypeDescription::Unsigned(_) => text.parse::<u128>().ok().map(Data::Unsigned),
+        TypeDescription::VisibleString(_) => Some(Data::VisibleString(text.to_string())),
+        _ => None,
     }
 }

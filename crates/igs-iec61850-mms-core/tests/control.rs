@@ -837,13 +837,19 @@ fn an_enhanced_operation_with_another_value_than_its_selection_is_inconsistent()
 
 #[test]
 fn a_request_of_another_origin_or_test_flag_is_inconsistent_within_a_sequence() {
+    // An enhanced selection carries its origin and test flag: a request of the sequence with another origin, or another test
+    // flag, is inconsistent. (A normal-security selection carries none: its first operation fixes them, see the next test.)
     let mut object = ControlObject::new(config(
-        ControlModel::SboNormal,
+        ControlModel::SboEnhanced,
         SboClass::OperateMany,
         Behaviour::On,
     ));
-    object.handle(at(0), request(ALICE, Service::Select, None));
+    object.handle(
+        at(0),
+        request(ALICE, Service::SelectWithValue, Some(value(true))),
+    );
     object.handle(at(1), ok());
+    object.handle(at(2), ok());
     let mut other_origin = parameters(ALICE, Some(value(true)));
     other_origin.origin = Originator {
         category: 2,
@@ -851,7 +857,7 @@ fn a_request_of_another_origin_or_test_flag_is_inconsistent_within_a_sequence() 
     };
     assert_eq!(
         object.handle(
-            at(2),
+            at(3),
             Event::Request {
                 service: Service::Operate,
                 parameters: other_origin,
@@ -867,7 +873,7 @@ fn a_request_of_another_origin_or_test_flag_is_inconsistent_within_a_sequence() 
     test.test = true;
     assert_eq!(
         object.handle(
-            at(2),
+            at(4),
             Event::Request {
                 service: Service::Operate,
                 parameters: test,
@@ -878,6 +884,41 @@ fn a_request_of_another_origin_or_test_flag_is_inconsistent_within_a_sequence() 
             Service::Operate,
             Err(Refusal::Cause(AddCause::INCONSISTENT_PARAMETERS))
         )]
+    );
+}
+
+#[test]
+fn a_normal_selection_takes_the_origin_and_test_flag_of_its_operation() {
+    // The select of a normal-security object is a read without parameters: the operation that follows fixes the origin.
+    let mut object = ControlObject::new(config(
+        ControlModel::SboNormal,
+        SboClass::OperateMany,
+        Behaviour::On,
+    ));
+    object.handle(at(0), request(ALICE, Service::Select, None));
+    object.handle(at(1), ok());
+    let mut first = parameters(ALICE, Some(value(true)));
+    first.origin = Originator {
+        category: 2,
+        identity: b"station".to_vec(),
+    };
+    let actions = object.handle(
+        at(2),
+        Event::Request {
+            service: Service::Operate,
+            parameters: first,
+        },
+    );
+    assert!(
+        has(
+            &actions,
+            &Action::Check {
+                kind: CheckKind::Operative,
+                check: CheckConditions::default(),
+                ctl_val: Some(value(true)),
+            }
+        ),
+        "{actions:?}"
     );
 }
 

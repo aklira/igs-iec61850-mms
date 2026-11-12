@@ -146,6 +146,12 @@ impl Updater {
         }
     }
 
+    /// The MMS type of a served attribute (for the initial values of a configuration).
+    #[cfg_attr(not(feature = "scl"), allow(dead_code))]
+    pub(crate) fn kind(&self, name: &str) -> Option<TypeDescription> {
+        self.points.get(name).map(|point| point.ty.clone())
+    }
+
     /// The node's value and the path of a served attribute, for the reports (task D4).
     pub(crate) fn point(&self, name: &str) -> Option<(Arc<Mutex<NodeValue>>, Vec<usize>)> {
         self.points

@@ -165,16 +165,35 @@ fn a_variable_of_a_data_set_knows_its_member_and_the_triggers_of_its_attribute()
 }
 
 #[test]
-fn an_instance_value_is_refused_rather_than_dropped() {
+fn an_instance_value_of_a_basic_attribute_is_kept_as_an_initial_value() {
     let text = mutate(
         "<LN lnClass=\"GGIO\" inst=\"1\" lnType=\"GGIOT\"/>",
         "<LN lnClass=\"GGIO\" inst=\"1\" lnType=\"GGIOT\">\n            <DOI name=\"Ind1\">\n              <DAI name=\"stVal\"><Val>true</Val></DAI>\n            </DOI>\n          </LN>",
     );
-    refused_with(
-        build_text(&text),
-        "SCL-003",
-        "the instance value of stVal is not built",
+    let configuration = build_text(&text).expect("the document builds");
+    assert_eq!(configuration.values.len(), 1);
+    let value = &configuration.values[0];
+    assert_eq!(
+        (
+            value.device.as_str(),
+            value.node.as_str(),
+            value.variable.as_str(),
+            value.text.as_str()
+        ),
+        ("LD1", "GGIO1", "GGIO1$ST$Ind1$stVal", "true")
     );
+}
+
+#[test]
+fn an_instance_without_a_value_keeps_no_value() {
+    let text = mutate(
+        "<LN lnClass=\"GGIO\" inst=\"1\" lnType=\"GGIOT\"/>",
+        "<LN lnClass=\"GGIO\" inst=\"1\" lnType=\"GGIOT\">\n            <DOI name=\"Ind1\">\n              <DAI name=\"stVal\"/>\n            </DOI>\n          </LN>",
+    );
+    assert!(build_text(&text)
+        .expect("the document builds")
+        .values
+        .is_empty());
 }
 
 #[test]

@@ -24,6 +24,7 @@ pub mod model;
 pub mod reports;
 
 pub mod clock;
+pub mod control;
 pub mod updates;
 
 pub mod client;
