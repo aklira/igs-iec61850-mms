@@ -522,7 +522,7 @@ The agent does not wait for these; it records the impact and continues with what
 | F4 Interop bench skeleton | [x] |
 | N1 Generator input and codec union | [x] |
 | N2 IEC 61850 MMS profile | [x] |
-| N3 Typed UtcTime, MMSString and TypeDescription | [ ] |
+| N3 Typed UtcTime, MMSString and TypeDescription | [x] |
 | N4 Alternate access towards the model | [ ] |
 | N5 Observable outbound delivery | [ ] |
 | A1 Object references and MMS names | [ ] |
