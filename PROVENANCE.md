@@ -199,6 +199,43 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the mapped types (their forms are in Table 15 and in the A2 vectors); medium for the
   enumeration of a status taken from `underlying_type`, which the catalogue gives without its kind.
 
+### D-009 — The served model negotiates `valt` for its named components (task A3)
+
+- **Decision**: the configuration of a server that serves the model (`igs_iec61850_mms::model::server_config`) negotiates
+  `valt`, through `ServerConfig::with_alternate_access`. The client side offers it already. Alternate access itself is
+  refused item by item, as the generic VMD refuses it (D-035 of igs-iso9506-mms), until the model side of the
+  alternate access is served (task A4).
+- **Why**: the MMS codec requires the CBB `valt` for every named component of a type description (`validate_cbb`,
+  §8.1.3.15 and the directives, as read in igs-iso9506-mms D-013). A structure of a logical node has named components (the functional
+  constraints, the data objects, the attributes), so without `valt` the server cannot send the type description of its
+  nodes: its own check refuses the response, and the request is left without an answer.
+- **Conflict**: IEC 61850-8-1 Table 128, as encoded in the profile (igs-iso9506-mms `profile_81.rs`), requires `valt` only of a
+  server that declares arrays. The codec rule is stricter for the logical-node model. The two readings differ only for
+  the names of components. Both are recorded: the codec keeps its reading (confidence medium), and the choice made here
+  does not depend on it beyond this configuration. If the reading of Table 128 is right, the codec rule is to be
+  limited to the ISO 9506 profile; that is a change to igs-iso9506-mms, decided with the maintainer.
+- **Test**: `tests/served_model.rs` (a type description of a node is answered, with the names of its components).
+- **Confidence**: medium.
+
+### D-010 — The served variables are read-only in task A3 (task A3)
+
+- **Decision**: the variables of a served node are read-only. A write is refused with `object-access-denied`. The values of
+  a node are one structure, held once: its named variable and each flattened name are views of it by path, so that
+  a read of a name and a read of the node always agree. Writes are opened by the write guard of task A4 (MODEL-005), with
+  the rules of each functional constraint.
+- **Why**: a write needs the guard that decides which attributes accept it, and that guard is the work of A4. A
+  read-only model is the honest state of A3, and SCOPE-002 forbids advertising the writes before they run.
+- **Confidence**: high for the single value (the test `a_node_and_its_flattened_name_show_the_same_value`); the
+  read-only state is temporary and listed in `docs/capabilities.md`.
+
+### D-011 — Unicode-3.0 joins the accepted licences (task A3)
+
+- **Decision**: `Unicode-3.0` is accepted in `deny.toml`. It is the licence of `unicode-ident`, which the derive macros of
+  the MMS stack bring in (through `proc-macro2`, `syn` and `quote`). The MMS repository accepts it for the same crate
+  (its PROVENANCE, third-party table), so the two repositories check the same set.
+- **Why**: the new path dependency on `igs-iso9506-mms` brings its dependency tree, which the list did not cover.
+- **Confidence**: high; the licence is permissive and the crate is data tables only.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

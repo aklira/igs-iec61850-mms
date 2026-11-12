@@ -18,6 +18,9 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
+    # unicode-ident, reached through the derive macros of the MMS stack: Unicode data tables, permissive (as in
+    # igs-iso9506-mms, PROVENANCE.md). Recorded as D-011.
+    "Unicode-3.0",
 ]
 
 [bans]

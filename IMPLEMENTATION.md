@@ -265,6 +265,12 @@ M0 = phases P, F, N1–N4; M1 = phases A, S and D1; M2 = N5, D2–D6; M3 = phase
 - Done when: AT-06: forced saturation is observable, order is kept per association, no cross-client
   delivery, existing targeted-report test still green. Release 1.2.0 prepared locally (no push).
 
+**N6 — The identifier limit of the VMD follows its profile** (added during A3; done in `igs-iso9506-mms`, D-037)
+- Depends: N1, N2.
+- Produce: a VMD of the IEC 61850 profile holds identifiers of up to 64 characters; the default stays at 32 for
+  ISO 9506 and TASE.2.
+- Done when: a flattened name of 34 characters is served with the IEC limit and refused by the default one.
+
 ### Phase A — Model and data access
 
 **A1 — Object references and MMS names**
@@ -525,9 +531,10 @@ The agent does not wait for these; it records the impact and continues with what
 | N3 Typed UtcTime, MMSString and TypeDescription | [x] |
 | N4 Alternate access towards the model | [x] |
 | N5 Observable outbound delivery | [x] |
+| N6 VMD identifier limit by profile (in igs-iso9506-mms, D-037) | [x] |
 | A1 Object references and MMS names | [x] |
 | A2 ACSI types and their MMS mapping | [x] |
-| A3 Server model | [ ] |
+| A3 Server model | [x] |
 | A4 Server data access | [ ] |
 | A5 Application event path and clock source | [ ] |
 | A6 Client discovery and data access | [ ] |

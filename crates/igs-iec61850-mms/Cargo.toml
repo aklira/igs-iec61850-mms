@@ -16,3 +16,11 @@ workspace = true
 
 [dependencies]
 igs-iec61850-mms-core = { path = "../igs-iec61850-mms-core", version = "0.1.0" }
+# The MMS stack the model is served on: its VMD and its model interface (task A3).
+igs-iso9506-mms = { path = "../../../igs-iso9506-mms/crates/igs-iso9506-mms", version = "1.1.0" }
+igs-iso9506-mms-codec = { path = "../../../igs-iso9506-mms/crates/igs-iso9506-mms-codec", version = "1.1.0" }
+igs-iso9506-mms-link = { path = "../../../igs-iso9506-mms/crates/igs-iso9506-mms-link", version = "1.1.0" }
+
+[dev-dependencies]
+# The tests run a server and a client over TCP on the loopback interface.
+tokio = { version = "1", features = ["macros", "rt", "time"] }
