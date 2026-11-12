@@ -1,0 +1,581 @@
+// SPDX-FileCopyrightText: 2026 The igs-iec61850-mms contributors
+//
+// SPDX-License-Identifier: Apache-2.0
+
+//! The buffered report control block (BRCB), as a sans-I/O state machine (task B1; BRCB-001).
+//!
+//! A BRCB keeps a bounded history of entries, one per notification (or per buffer-time window, or per integrity period), so that a
+//! client that was away can resume without losing an entry it has not seen. The machine takes the same events as the unbuffered block
+//! (a request, a notification, a timer, the loss of an association) with the current time, and returns the actions: the responses,
+//! the reports to send, and the timers to arm or disarm. It reads no clock and waits for nothing.
+//!
+//! The states and their transitions follow IEC 61850-7-2 §17.2.2.5 and figure 26: `disabled` (the entries are buffered, nothing is
+//! sent), `resync` (the client has set an `EntryID` that is in the history), and `enabled` (the reports are sent as the entries are
+//! made). An association loss returns the block to `disabled` and keeps the history (§17.2.3.2.3.6). The history is bounded: when it
+//! is full the oldest entry is discarded, and an entry that was not yet sent makes the next report carry `BufOvfl` (§17.2.3.2.2.8).
+//! The rules and the decisions where the text is open are in `PROVENANCE.md` (D-037).
+//!
+//! Not in this release: the reservation and the owner of the block (`ResvTms`, `Owner`), the general interrogation, the segmentation of
+//! the integrity and general-interrogation snapshots, and the MMS encoding of the entries (task B2). The sequence number is 16 bits
+//! (table 70, `SqNum` INT16U).
+
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::time::Duration;
+
+use super::urcb::{
+    Config, Entry, OptionalFields, Reason, ReportKind, Timer, Trigger, TriggerOptions,
+};
+use crate::control::ClientId;
+
+/// An entry identifier (`EntryID`). The value zero is the NULL identifier, reserved for an empty buffer and for the resynchronisation
+/// to the oldest entry (§17.2.2.15); no entry has it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct EntryId(pub u64);
+
+impl EntryId {
+    /// The NULL identifier.
+    pub const NULL: EntryId = EntryId(0);
+
+    /// Whether this is the NULL identifier.
+    pub fn is_null(self) -> bool {
+        self.0 == 0
+    }
+}
+
+/// The state of a buffered block (figure 26).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    /// The entries are buffered; no report is sent.
+    Disabled,
+    /// The client has set an `EntryID` that is in the history; the next enabling starts after it.
+    Resync,
+    /// The reports are sent for the buffered entries and for the new ones.
+    Enabled,
+}
+
+/// An entry of the history: its identifier, its time of entry (the time of its notification or window), its kind, and the members
+/// it includes with the reasons of each.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Buffered {
+    /// The identifier of the entry.
+    pub id: EntryId,
+    /// The time at which the entry was created (`TimeOfEntry`).
+    pub time_of_entry: Duration,
+    /// Why the entry was made.
+    pub kind: ReportKind,
+    /// The members of the entry, in the order of the data set.
+    pub entries: Vec<Entry>,
+}
+
+/// A write of a client to the block: one attribute, with its value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Write {
+    /// `RptEna`: enable (`true`) or disable (`false`).
+    RptEna(bool),
+    /// `RptID` (c1, c2 of table 70: refused while enabled, and a change purges the buffer).
+    RptId(String),
+    /// `DatSet`: the data set, or `None` for the NULL value (a change purges the buffer).
+    DataSet(Option<String>),
+    /// `OptFlds` (refused while enabled).
+    OptFields(OptionalFields),
+    /// `BufTm` (a change purges the buffer).
+    BufTm(Duration),
+    /// `TrgOps` (a change purges the buffer).
+    TrgOps(TriggerOptions),
+    /// `IntgPd` (a change purges the buffer).
+    IntgPd(Duration),
+    /// `PurgeBuf`: discard the buffered entries (refused while enabled).
+    PurgeBuf,
+    /// `EntryID`: the entry to resynchronise to (the NULL identifier for the oldest one). Refused while enabled.
+    EntryId(EntryId),
+}
+
+/// Why a write is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Refusal {
+    /// The attribute is written only while the block is disabled (`RptEna` is FALSE).
+    Enabled,
+    /// The block cannot be enabled without a data set.
+    DataSetNull,
+    /// The data set does not exist in the logical node.
+    UnknownDataSet,
+    /// The `EntryID` is not in the history. From `disabled` the state stays; from `resync` the state goes back to `disabled`
+    /// (§17.2.2.15, figure 26). The MMS error depends on the state, which the encoder reports.
+    EntryNotInQueue {
+        /// The state before the write.
+        from: State,
+    },
+}
+
+/// Events for the block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Event {
+    /// A write of a client.
+    Request {
+        /// The client that writes.
+        client: ClientId,
+        /// The write.
+        write: Write,
+    },
+    /// An internal notification of a member of the data set.
+    Notification {
+        /// The index of the member.
+        member: usize,
+        /// The trigger that produced it.
+        trigger: Trigger,
+    },
+    /// A timer expired.
+    Timer(Timer),
+    /// The association of a client is lost.
+    AssociationLost(ClientId),
+}
+
+/// A report of the block: one entry, with the sequence number and the flags of its report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BufferedReport {
+    /// The time at which the report is formatted.
+    pub at: Duration,
+    /// The sequence number (`SqNum`), before this report.
+    pub sequence: u16,
+    /// The identifier of the entry sent.
+    pub entry_id: EntryId,
+    /// The time of entry (`TimeOfEntry`).
+    pub time_of_entry: Duration,
+    /// Whether entries may have been lost before this one (`BufOvfl`).
+    pub buf_ovfl: bool,
+    /// Why the entry was made.
+    pub kind: ReportKind,
+    /// The members of the entry.
+    pub entries: Vec<Entry>,
+}
+
+/// An action of the block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    /// The answer to the write of a client.
+    Respond(Result<(), Refusal>),
+    /// A report to send.
+    Report(BufferedReport),
+    /// Arm a timer, to fire at this time.
+    Arm {
+        /// The timer.
+        timer: Timer,
+        /// The time of its expiry.
+        at: Duration,
+    },
+    /// Disarm a timer.
+    Disarm(Timer),
+}
+
+/// The window of buffer time that collects the notifications of one entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Window {
+    /// The time at which the window closes.
+    deadline: Duration,
+    /// The time of entry: the first notification of the window.
+    start: Duration,
+    /// The members of the window, with their reasons.
+    members: BTreeMap<usize, BTreeSet<Reason>>,
+}
+
+/// A buffered report control block.
+#[derive(Debug, Clone)]
+pub struct Brcb {
+    config: Config,
+    capacity: usize,
+    state: State,
+    /// The history, the oldest entry first.
+    queue: VecDeque<Buffered>,
+    /// The identifier of the next entry to be made; identifiers start at 1.
+    next_id: u64,
+    /// The identifier of the next entry to format for transmission.
+    pointer: u64,
+    /// Whether the next report carries `BufOvfl`.
+    overflow: bool,
+    /// The sequence number of the next report.
+    sequence: u16,
+    /// The last entry formatted for transmission, while enabled.
+    last_formatted: EntryId,
+    window: Option<Window>,
+    /// The time of the next integrity entry, when the integrity period is set.
+    integrity_due: Option<Duration>,
+}
+
+impl Brcb {
+    /// A block with the configuration, which keeps at most `capacity` entries (at least one).
+    pub fn new(config: Config, capacity: usize) -> Self {
+        Self {
+            config,
+            capacity: capacity.max(1),
+            state: State::Disabled,
+            queue: VecDeque::new(),
+            next_id: 1,
+            pointer: 1,
+            overflow: false,
+            sequence: 0,
+            last_formatted: EntryId::NULL,
+            window: None,
+            integrity_due: None,
+        }
+    }
+
+    /// Starts the integrity period, when one is configured; the caller calls it once, when the block is served.
+    pub fn start(&mut self, now: Duration) -> Vec<Action> {
+        self.integrity_actions(now)
+    }
+
+    /// The state of the block.
+    pub fn state(&self) -> State {
+        self.state
+    }
+
+    /// The entries of the history, the oldest first.
+    pub fn history(&self) -> impl Iterator<Item = &Buffered> {
+        self.queue.iter()
+    }
+
+    /// The `EntryID` that `GetBRCBValues` reports (§17.2.2.15): the newest entry made while disabled, and the last one formatted
+    /// while enabled. The NULL identifier when there is none.
+    pub fn last_entry_id(&self) -> EntryId {
+        match self.state {
+            State::Enabled => self.last_formatted,
+            State::Disabled | State::Resync => {
+                self.queue.back().map_or(EntryId::NULL, |entry| entry.id)
+            }
+        }
+    }
+
+    /// Handles an event at the given time, and returns the actions to take.
+    pub fn handle(&mut self, now: Duration, event: Event) -> Vec<Action> {
+        match event {
+            Event::Request { client: _, write } => self.request(now, write),
+            Event::Notification { member, trigger } => self.notification(now, member, trigger),
+            Event::Timer(Timer::BufferTime) => self.buffer_timer(now),
+            Event::Timer(Timer::Integrity) => self.integrity(now),
+            Event::AssociationLost(_) => {
+                self.state = State::Disabled;
+                Vec::new()
+            }
+        }
+    }
+
+    fn request(&mut self, now: Duration, write: Write) -> Vec<Action> {
+        match write {
+            Write::RptEna(true) => self.enable(now),
+            Write::RptEna(false) => {
+                self.state = State::Disabled;
+                respond(Ok(()))
+            }
+            Write::EntryId(id) => self.resynchronise(id),
+            Write::PurgeBuf if self.state == State::Enabled => respond(Err(Refusal::Enabled)),
+            Write::PurgeBuf => {
+                let mut actions = self.purge();
+                actions.extend(respond(Ok(())));
+                actions
+            }
+            configuration => self.configure(now, configuration),
+        }
+    }
+
+    /// `RptEna` = TRUE: from `disabled` the reports start with the oldest entry, and the first one carries `BufOvfl` (the block is
+    /// not resynchronised, §17.2.3.2.2.8); from `resync` they start after the entry the client set.
+    fn enable(&mut self, now: Duration) -> Vec<Action> {
+        if self.state == State::Enabled {
+            return respond(Ok(()));
+        }
+        match self.config.data_set.as_ref() {
+            None => return respond(Err(Refusal::DataSetNull)),
+            Some(name) if !self.config.data_sets.contains_key(name) => {
+                return respond(Err(Refusal::UnknownDataSet))
+            }
+            Some(_) => {}
+        }
+        if self.state == State::Disabled {
+            self.pointer = self.queue.front().map_or(self.next_id, |entry| entry.id.0);
+            self.overflow = true;
+        }
+        self.state = State::Enabled;
+        self.sequence = 0;
+        let mut actions = respond(Ok(()));
+        actions.extend(self.transmit(now));
+        actions
+    }
+
+    /// `EntryID`: the NULL identifier moves to the oldest entry (`disabled` to `resync`, and `resync` back to `disabled`, as the text
+    /// of figure 26 has it); an identifier in the history moves to `resync` after it; any other identifier is refused.
+    fn resynchronise(&mut self, id: EntryId) -> Vec<Action> {
+        if self.state == State::Enabled {
+            return respond(Err(Refusal::Enabled));
+        }
+        if id.is_null() {
+            self.pointer = self.queue.front().map_or(self.next_id, |entry| entry.id.0);
+            self.state = match self.state {
+                State::Resync => State::Disabled,
+                _ => State::Resync,
+            };
+            return respond(Ok(()));
+        }
+        if self.queue.iter().any(|entry| entry.id == id) {
+            self.pointer = id.0.saturating_add(1);
+            self.state = State::Resync;
+            return respond(Ok(()));
+        }
+        let from = self.state;
+        if from == State::Resync {
+            self.state = State::Disabled;
+        }
+        respond(Err(Refusal::EntryNotInQueue { from }))
+    }
+
+    /// The configuration attributes: refused while enabled; a change of a purging attribute discards the buffer.
+    fn configure(&mut self, now: Duration, write: Write) -> Vec<Action> {
+        if self.state == State::Enabled {
+            return respond(Err(Refusal::Enabled));
+        }
+        // The integrity period restarts only when its trigger option or its period changes.
+        let mut schedule = false;
+        let changed = match write {
+            Write::RptId(id) => {
+                let changed = id != self.config.rpt_id;
+                self.config.rpt_id = id;
+                changed
+            }
+            Write::DataSet(name) => {
+                if let Some(name) = name.as_ref() {
+                    if !self.config.data_sets.contains_key(name) {
+                        return respond(Err(Refusal::UnknownDataSet));
+                    }
+                }
+                let changed = name != self.config.data_set;
+                self.config.data_set = name;
+                changed
+            }
+            Write::OptFields(fields) => {
+                self.config.opt_flds = fields;
+                false
+            }
+            Write::BufTm(period) => {
+                let changed = period != self.config.buf_tm;
+                self.config.buf_tm = period;
+                changed
+            }
+            Write::TrgOps(options) => {
+                let changed = options != self.config.trg_ops;
+                self.config.trg_ops = options;
+                schedule = true;
+                changed
+            }
+            Write::IntgPd(period) => {
+                let changed = period != self.config.intg_pd;
+                self.config.intg_pd = period;
+                schedule = true;
+                changed
+            }
+            // Handled by `request`; these are not configuration.
+            Write::RptEna(_) | Write::EntryId(_) | Write::PurgeBuf => false,
+        };
+        let mut actions = Vec::new();
+        if changed {
+            actions.extend(self.purge());
+        }
+        if schedule {
+            actions.extend(self.integrity_actions(now));
+        }
+        actions.extend(respond(Ok(())));
+        actions
+    }
+
+    /// `PurgeBuf`: the history, the open window and the overflow are discarded; the next entry starts a new history.
+    fn purge(&mut self) -> Vec<Action> {
+        self.queue.clear();
+        self.overflow = false;
+        self.pointer = self.next_id;
+        self.last_formatted = EntryId::NULL;
+        match self.window.take() {
+            Some(_) => vec![Action::Disarm(Timer::BufferTime)],
+            None => Vec::new(),
+        }
+    }
+
+    fn notification(&mut self, now: Duration, member: usize, trigger: Trigger) -> Vec<Action> {
+        let options = self.config.trg_ops;
+        let triggered = match trigger {
+            Trigger::DataChange => options.data_change,
+            Trigger::QualityChange => options.quality_change,
+            Trigger::DataUpdate => options.data_update,
+        };
+        if !triggered {
+            return Vec::new();
+        }
+        let Some(count) = self.member_count() else {
+            return Vec::new();
+        };
+        if member >= count {
+            return Vec::new();
+        }
+        let reason = Reason::from(trigger);
+        if self.config.buf_tm.is_zero() {
+            let mut members = BTreeMap::new();
+            members.insert(member, BTreeSet::from([reason]));
+            return self.push(now, now, ReportKind::Notification, members);
+        }
+        let mut actions = Vec::new();
+        // A second notification of a member within the window ends the window at once, and starts the next one (§17.2.2.9, the rule
+        // for status values).
+        if self
+            .window
+            .as_ref()
+            .is_some_and(|window| window.members.contains_key(&member))
+        {
+            actions.extend(self.close_window(now));
+        }
+        match self.window.as_mut() {
+            Some(window) => {
+                window.members.entry(member).or_default().insert(reason);
+            }
+            None => {
+                let deadline = now.saturating_add(self.config.buf_tm);
+                let members = BTreeMap::from([(member, BTreeSet::from([reason]))]);
+                self.window = Some(Window {
+                    deadline,
+                    start: now,
+                    members,
+                });
+                actions.push(Action::Arm {
+                    timer: Timer::BufferTime,
+                    at: deadline,
+                });
+            }
+        }
+        actions
+    }
+
+    /// The buffer-time timer: a timer that fires before the deadline of the open window is stale, and is ignored.
+    fn buffer_timer(&mut self, now: Duration) -> Vec<Action> {
+        match self.window.as_ref() {
+            Some(window) if window.deadline <= now => self.close_window(now),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Closes the open window: its members become one entry, timed at the window's start.
+    fn close_window(&mut self, now: Duration) -> Vec<Action> {
+        let Some(window) = self.window.take() else {
+            return Vec::new();
+        };
+        let mut actions = vec![Action::Disarm(Timer::BufferTime)];
+        actions.extend(self.push(now, window.start, ReportKind::Notification, window.members));
+        actions
+    }
+
+    /// The integrity timer: an entry of all members, then the next period.
+    fn integrity(&mut self, now: Duration) -> Vec<Action> {
+        match self.integrity_due {
+            Some(due) if due <= now => {}
+            _ => return Vec::new(),
+        }
+        let Some(count) = self.member_count() else {
+            return Vec::new();
+        };
+        let members: BTreeMap<usize, BTreeSet<Reason>> = (0..count)
+            .map(|member| (member, BTreeSet::from([Reason::Integrity])))
+            .collect();
+        let mut actions = self.push(now, now, ReportKind::Integrity, members);
+        actions.extend(self.integrity_actions(now));
+        actions
+    }
+
+    /// Arms the integrity timer for the next period, or disarms it when the trigger option or the period is not set.
+    fn integrity_actions(&mut self, now: Duration) -> Vec<Action> {
+        if self.config.trg_ops.integrity && !self.config.intg_pd.is_zero() {
+            let due = now.saturating_add(self.config.intg_pd);
+            self.integrity_due = Some(due);
+            vec![Action::Arm {
+                timer: Timer::Integrity,
+                at: due,
+            }]
+        } else {
+            self.integrity_due = None;
+            vec![Action::Disarm(Timer::Integrity)]
+        }
+    }
+
+    /// The number of members of the configured data set, when it exists.
+    fn member_count(&self) -> Option<usize> {
+        let name = self.config.data_set.as_ref()?;
+        self.config.data_sets.get(name).copied()
+    }
+
+    /// Makes an entry of the members, enters it into the history, and sends what is due.
+    fn push(
+        &mut self,
+        now: Duration,
+        time_of_entry: Duration,
+        kind: ReportKind,
+        members: BTreeMap<usize, BTreeSet<Reason>>,
+    ) -> Vec<Action> {
+        if members.is_empty() {
+            return Vec::new();
+        }
+        let id = EntryId(self.next_id);
+        self.next_id = self.next_id.saturating_add(1);
+        let entries = members
+            .into_iter()
+            .map(|(member, reasons)| Entry { member, reasons })
+            .collect();
+        self.queue.push_back(Buffered {
+            id,
+            time_of_entry,
+            kind,
+            entries,
+        });
+        while self.queue.len() > self.capacity {
+            let Some(oldest) = self.queue.pop_front() else {
+                break;
+            };
+            // An entry that was not yet formatted is lost: the next report says so. One already sent is not a loss.
+            if oldest.id.0 >= self.pointer {
+                self.overflow = true;
+                self.pointer = oldest.id.0.saturating_add(1);
+            }
+        }
+        self.transmit(now)
+    }
+
+    /// While enabled, formats every entry that is not yet sent, in the order of the history.
+    fn transmit(&mut self, now: Duration) -> Vec<Action> {
+        if self.state != State::Enabled {
+            return Vec::new();
+        }
+        let due: Vec<Buffered> = self
+            .queue
+            .iter()
+            .filter(|entry| entry.id.0 >= self.pointer)
+            .cloned()
+            .collect();
+        let mut actions = Vec::with_capacity(due.len());
+        for entry in due {
+            self.pointer = entry.id.0.saturating_add(1);
+            self.last_formatted = entry.id;
+            let sequence = self.sequence;
+            self.sequence = self.sequence.wrapping_add(1);
+            let buf_ovfl = std::mem::take(&mut self.overflow);
+            actions.push(Action::Report(BufferedReport {
+                at: now,
+                sequence,
+                entry_id: entry.id,
+                time_of_entry: entry.time_of_entry,
+                buf_ovfl,
+                kind: entry.kind,
+                entries: entry.entries,
+            }));
+        }
+        actions
+    }
+}
+
+/// The response to a write.
+fn respond(result: Result<(), Refusal>) -> Vec<Action> {
+    vec![Action::Respond(result)]
+}

@@ -7,5 +7,6 @@
 //! The unbuffered block is a sans-I/O state machine ([`urcb`]). Its reports are laid out in MMS by [`encode`] (task D4); their
 //! delivery is served by the crate `igs-iec61850-mms`.
 
+pub mod brcb;
 pub mod encode;
 pub mod urcb;

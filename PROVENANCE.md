@@ -854,6 +854,37 @@ silent, to be confirmed by an observation test against other implementations.
   latency are measured; the report, buffer and transport items of §12.4 are listed as not measured, with no number.
 - **Confidence**: high on the targets (they build and run clean); medium on the measurements as a description of this machine only.
 
+### D-037 — The buffered report block: states, history, overflow and resynchronisation (task B1; BRCB-001)
+
+- **States** (7-2 §17.2.2.5, figure 26): `disabled`, `resync`, `enabled`. Association loss goes to `disabled` from any state and keeps the history
+  (§17.2.3.2.3.6). The figure's arrows are partly lost in the text; the transitions are taken from the prose of §17.2.2.15 and of the state
+  descriptions, and the tests name each one.
+- **NULL `EntryID`** (confidence medium): the prose says it resynchronises to the oldest entry and that the state goes from `resync` to `disabled`.
+  Implemented literally: from `disabled` it moves to `resync` (the figure's "set EntryID succeeds" arrow), from `resync` back to `disabled`, with the
+  pointer at the oldest entry in both cases. An `EntryID` not in the history is refused: from `disabled` the state stays, from `resync` it goes to
+  `disabled` (the MMS error code differs by state, which the encoder of B2 reports).
+- **Enabling** (§17.2.2.15): from `disabled` the reports start with the oldest entry; from `resync` after the entry the client set. The first report
+  after a `disabled` enabling carries `BufOvfl` (§17.2.3.2.2.8); a resynchronised one does not. `SqNum` restarts at zero at each enabling, as 17.2.2.10
+  says; it is 16 bits (table 70, INT16U).
+- **Buffer time** (§17.2.2.9): notifications are combined into one entry timed at the window's start. A second notification of a member inside the
+  window closes the window at once and opens the next one: the rule the standard gives for status values, applied to every member (the analogue rule
+  for measured values is a choice, not taken). With a buffer time of zero each notification is one entry. A buffer timer that fires before the
+  deadline of the open window is ignored: the timer of a replaced window is stale.
+- **Integrity** (§17.2.2.12, §17.2.3.2.3.6): integrity entries of all members are buffered in every state, from `start` and then each period. A change of
+  `IntgPd` or `TrgOps` restarts the period; a change of another attribute does not.
+- **Overflow** (§17.2.3.2.2.8): the history keeps `capacity` entries, given by the caller (the standard leaves the number to the server, NOTE 2 of
+  §17.2.3.2.3.6). The oldest entry is discarded; if it was not yet sent, the next report carries `BufOvfl` and the pointer moves past it. An entry sent
+  and then discarded is not a loss. While enabled every entry is sent at once, so an unsent entry exists only while disabled or resynchronising.
+- **Purge and configuration** (table 70, notes c1 and c2): `PurgeBuf` and the configuration writes are refused while enabled. A change of `RptID`,
+  `DatSet`, `BufTm`, `TrgOps` or `IntgPd` purges the history and the open window while disabled, as the table says. `OptFlds` is c2 only: no purge.
+- **Not in this release** (B2 or later): the reservation and the owner (`ResvTms`, `Owner`, c3), the general interrogation, the segmentation of the
+  integrity and general-interrogation snapshots, and the MMS encoding of the entries (`EntryID` as an octet string, `TimeOfEntry`). The client side is B2.
+- **Known gap, to close in B2**: an entry keeps its members and reasons but not their values. The values are read when a report is formatted, so a
+  report of an old entry carries the current values, not the values at its time (17.2.3.2.2.9 and figure 34). The fix is to carry the value in the
+  notification; it changes the notification event of this machine, so it is made with the encoding, not here.
+- **Tests**: `igs-iec61850-mms-core/tests/report_buffered.rs`, fifteen deterministic tests (disconnect, resumption, overflow, resynchronisation, purge,
+  refusals, integrity, sequence numbers, the last `EntryID`).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
