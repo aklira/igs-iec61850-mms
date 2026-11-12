@@ -841,14 +841,15 @@ pub fn describe_octets(max: i64) -> TypeDescription {
     TypeDescription::OctetString(Integer32(max))
 }
 
-/// The type description of a visible string of at most `max` characters.
+/// The type description of a visible string of at most `max` characters: a variable length with the maximum, which MMS
+/// writes as a negative size (ISO 9506-2 §14.2.2.4.2; the reference peer describes its strings this way too).
 pub fn describe_visible(max: i64) -> TypeDescription {
-    TypeDescription::VisibleString(Integer32(max))
+    TypeDescription::VisibleString(Integer32(max.saturating_neg()))
 }
 
-/// The type description of a Unicode string of at most `max` characters.
+/// The type description of a Unicode string of at most `max` characters: a variable length with the maximum (a negative size).
 pub fn describe_unicode(max: i64) -> TypeDescription {
-    TypeDescription::MMSString(Integer32(max))
+    TypeDescription::MMSString(Integer32(max.saturating_neg()))
 }
 
 /// The type description of a `Timestamp`: the UtcTime of Annex F.3.1.
@@ -1359,13 +1360,14 @@ mod tests {
             describe_octets(64),
             TypeDescription::OctetString(Integer32(64))
         );
+        // A string of at most a given length is a variable length with the maximum: a negative size (A2, D-031).
         assert_eq!(
             describe_visible(64),
-            TypeDescription::VisibleString(Integer32(64))
+            TypeDescription::VisibleString(Integer32(-64))
         );
         assert_eq!(
             describe_unicode(255),
-            TypeDescription::MMSString(Integer32(255))
+            TypeDescription::MMSString(Integer32(-255))
         );
         assert_eq!(describe_timestamp(), TypeDescription::UtcTime);
         assert_eq!(

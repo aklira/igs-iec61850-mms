@@ -554,7 +554,7 @@ The agent does not wait for these; it records the impact and continues with what
 | K2 MMS mapping of controls | [x] |
 | K3 Deferred outcomes and client control API | [x] |
 | E1 Inventory of Edition 1 differences | [x] |
-| E2 Detection and profile | [ ] |
+| E2 Detection and profile | [x] |
 | E3 Edition 1 interop | [ ] |
 | G1 One runtime, clients and server | [ ] |
 | G2 Proxy model, quality and controls | [ ] |

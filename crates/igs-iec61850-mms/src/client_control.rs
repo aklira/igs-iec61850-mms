@@ -83,8 +83,32 @@ pub enum Termination {
     },
 }
 
-/// The name of an additional cause, from its value in the catalogue enumeration `ControlServiceStatusKind`.
+/// The edition of IEC 61850-7-2 that a peer follows, where the editions differ (task E2). The default of the crate is the second
+/// edition (the catalogue); the first edition differs in the additional causes 26 and 27, which the corrections of the tissues
+/// exchanged (see `docs/edition1` in the private notes, decision D-031).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Edition {
+    /// The first edition (2003 and its 2007 revision).
+    One,
+    /// The second edition (2007B and the amendments): the catalogue of the crate.
+    #[default]
+    Two,
+}
+
+/// The name of an additional cause, from its value in the catalogue enumeration `ControlServiceStatusKind` (the second edition).
 pub fn cause_name(value: i64) -> Option<&'static str> {
+    cause_name_in(Edition::Two, value)
+}
+
+/// The name of an additional cause in an edition: the catalogue, with the values of the first edition for 26 and 27.
+pub fn cause_name_in(edition: Edition, value: i64) -> Option<&'static str> {
+    if edition == Edition::One {
+        match value {
+            26 => return Some("Locked-by-other-client"),
+            27 => return Some("Inconsistent-parameters"),
+            _ => {}
+        }
+    }
     catalogue::enumeration("ControlServiceStatusKind")?
         .literals
         .iter()
@@ -92,8 +116,13 @@ pub fn cause_name(value: i64) -> Option<&'static str> {
         .map(|literal| literal.name)
 }
 
-/// The outcome that a report carries, if the report is a `CommandTermination` or a `LastApplError`.
+/// The outcome that a report carries, if the report is a `CommandTermination` or a `LastApplError` (the second edition).
 pub fn termination(report: &UnconfirmedService) -> Option<Termination> {
+    termination_in(Edition::Two, report)
+}
+
+/// The outcome that a report carries, read in an edition: the names of the additional causes follow the edition.
+pub fn termination_in(edition: Edition, report: &UnconfirmedService) -> Option<Termination> {
     let UnconfirmedService::InformationReport(info) = report else {
         return None;
     };
@@ -116,7 +145,7 @@ pub fn termination(report: &UnconfirmedService) -> Option<Termination> {
                 error: enumeration_from_data(error).ok()?,
                 ctl_num: u8::try_from(*ctl_num).ok()?,
                 cause,
-                cause_name: cause_name(cause),
+                cause_name: cause_name_in(edition, cause),
             })
         }
         VariableAccessSpecification::ListOfVariable(items) => {
@@ -207,5 +236,31 @@ impl IecClient {
             Some(result) => Ok(result),
             None => Err(ClientError::Response("the write answers no item")),
         }
+    }
+}
+
+/// The edition that a logical device declares in its namespace string (`LLN0.NamPlt.ldNs`, task E2): the first edition names
+/// the 2003 namespace of IEC 61850-7-4, the second the 2007 one. `None` when the string is not one of them: the edition is not
+/// assumed then.
+pub fn edition_of_namespace(text: &str) -> Option<Edition> {
+    if text.contains("2003") {
+        Some(Edition::One)
+    } else if text.contains("2007") {
+        Some(Edition::Two)
+    } else {
+        None
+    }
+}
+
+impl IecClient {
+    /// The edition of a logical device, from its namespace string `LLN0.NamPlt.ldNs` (E2). `None` when the device does not give one of
+    /// the known namespaces, or does not give the attribute.
+    pub async fn detect_edition(&self, device: &str) -> Result<Option<Edition>, ClientError> {
+        let item = component_item(device, "LLN0$EX$NamPlt", "ldNs")?;
+        let results = self.read(&[item]).await?;
+        Ok(match results.into_iter().next() {
+            Some(Ok(Data::VisibleString(text))) => edition_of_namespace(&text),
+            _ => None,
+        })
     }
 }
