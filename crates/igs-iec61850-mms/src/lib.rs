@@ -24,3 +24,5 @@ pub mod model;
 
 pub mod clock;
 pub mod updates;
+
+pub mod client;

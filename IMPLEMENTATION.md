@@ -537,7 +537,7 @@ The agent does not wait for these; it records the impact and continues with what
 | A3 Server model | [x] |
 | A4 Server data access | [x] |
 | A5 Application event path and clock source | [x] |
-| A6 Client discovery and data access | [ ] |
+| A6 Client discovery and data access | [x] |
 | A7 Data-access interop | [ ] |
 | S1 Parser and bounds | [ ] |
 | S2 Semantic checks and templates | [ ] |

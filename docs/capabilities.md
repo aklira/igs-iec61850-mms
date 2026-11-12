@@ -41,3 +41,16 @@ settles it. A gap is an item that is refused or reported explicitly, never serve
 | Application updates of values, qualities and timestamps | Served, per logical node, all or nothing, with a revision | D-015 |
 | Snapshot of several items of one Read | Not one state: each item at its own moment | D-015, MODEL-006 |
 | Consistent view of several nodes | Through data sets and reports (tasks D and B), not yet | D-015 |
+
+## Client discovery and data access (task A6)
+
+| Item | State | Decision |
+| --- | --- | --- |
+| Logical devices (domains), logical nodes, named variables, paged with `continueAfter`, checked page by page | Served | D-016 |
+| Functional groups and data objects of a node, from its type description | Served | D-016 |
+| Definitions rebuilt from the type descriptions; unknown types kept generically; malformed descriptions refused | Served | D-016, MODEL-002 |
+| Value check against a definition (`DataDefinition::accepts`) | Served | D-016 |
+| Reads and writes with one result per item, in order | Served | D-016, ACSI-002 |
+| Error of a written item `temporarily-unavailable` | Mapped to `AccessNotAllowedInCurrentState` (Table 27 is ambiguous) | D-016 |
+| Arrays (client definitions) | Defined; the served model has no array yet | D-016 |
+| Typed data sets and control blocks in the client | Not yet (tasks D, B and K) | ACSI-001 |

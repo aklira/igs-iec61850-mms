@@ -319,6 +319,34 @@ silent, to be confirmed by an observation test against other implementations.
   nothing and takes no revision; the types, the enumerations and the single node; a reader that never sees a value without
   the time of its update, with 300 updates running against 300 reads).
 
+### D-016 — Discovery and the states of a definition, and the error of an item (task A6)
+
+- **Decision**: the client rebuilds each definition from its MMS type description and keeps it in one of three states.
+  *Known*: a leaf of a type of the mapping, or a structure or an array of known leaves. *Unknown semantics*: a type of MMS
+  the client does not know (`Leaf::Unknown`), or a type the server names without sending it (`Leaf::Unresolved`, with the
+  path); both are kept, so that the value can be read and written generically (MODEL-002). *Malformed*: a rule of the
+  protocol or of the mapping is broken (an unnamed or a repeated component, a zero-size bit string or integer, a float
+  whose exponent is not shorter than its format, a negative length); it is an error with its path. A description nested
+  beyond `MAX_DEPTH` is refused, not followed.
+  - The logical nodes of a device are the named variables with no `$`; the flattened names are not nodes (D-013).
+  - A listing is read page by page with `continueAfter` (the last name of the page). A page is refused when a name repeats
+    or is not after the one before it, and a page that is empty while more follow is refused as stalled. So a listing
+    neither skips nor counts twice a name (ACSI-001).
+  - The result of a read or a write has one entry per item, in the order of the items (ACSI-002).
+- **The error of an item** (8-1 Tables 26 and 27): `object-access-denied` is `AccessViolation`; `object-non-existent` is
+  `InstanceNotAvailable`; `type-inconsistent` is `TypeConflict` (writes); `object-value-invalid` is
+  `ParameterValueInconsistent` (writes); any other error is `FailedDueToCommunicationsConstraint`.
+  - **Ambiguity**: Table 27 maps `temporarily-unavailable` to two ACSI errors, `instance-locked-by-other-client` and
+    `access-not-allowed-in-current-state`. The client maps it to the second, which is the state of the server; the first
+    would need the lock owner, which MMS does not say. Reads have one mapping in Table 26, and it is used.
+- **Sources**: IEC 61850-8-1 §7.3.1 (the layout of a node), §8.1.3.4.4.1 and .2 with Tables 26 and 27, §13.4.2 to §13.4.4
+  (Tables 54 and 55); ISO 9506-2 (GetNameList and its continuation).
+- **Confidence**: high for the states, the paging checks and the mapping of the errors of Table 26; medium for the choice
+  of `access-not-allowed-in-current-state` in Table 27, which the table leaves two ways.
+- **Test**: `crates/igs-iec61850-mms-core/tests/discovery.rs` (the states, the malformed cases, the nesting, the groups, the
+  logical nodes, the pages); `crates/igs-iec61850-mms/tests/client_discovery.rs` (AT-07, client side, against the served
+  model: the listings, the definitions, the acceptance of a value, the read and write results per item).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
