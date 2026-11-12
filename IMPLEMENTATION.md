@@ -544,7 +544,7 @@ The agent does not wait for these; it records the impact and continues with what
 | S3 Model and communication parameters from SCL | [x] |
 | D1 Static datasets | [x] |
 | D2 Dynamic datasets | [ ] |
-| D3 URCB state machine | [ ] |
+| D3 URCB state machine | [x] |
 | D4 Report encoding and delivery | [ ] |
 | D5 Client reporting | [ ] |
 | D6 Reporting interop | [ ] |

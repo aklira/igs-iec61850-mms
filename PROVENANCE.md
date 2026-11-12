@@ -538,6 +538,41 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the expansion and the lifecycle (tests); medium for the choice of refusing a delete request whole rather than
   deleting its unprotected lists (a client sees one answer; it is the conservative reading of DS-002).
 
+### D-024 — The unbuffered report control block as a state machine: reservation, writes, triggers, buffer time, integrity and GI (task D3; RPT-001)
+
+- **Source**: IEC 61850-7-2 §17.2 (17.2.2.5 to 17.2.2.13, 17.2.3.2.3, 17.2.4) and 8-1 §17.1.3 (table 73, the rules of the
+  writes). Figures 26 (the BRCB state machine, whose `disabled` and `enabled` states the URCB keeps, without `resync` and
+  without entries) and 30 (the general interrogation) were read from the PDF pages: the prepared text marks them missing.
+  The reading was limited to these figures and to the clauses of the task.
+- **Reservation** (17.2.4.5): enabling, and every configuration write, need the reservation of the writer. A reservation is taken
+  by a free block or by its holder; another client is refused. `Resv` is written only while the block is disabled (8-1 table 73,
+  c1). When the holder's association is lost, its reservation is released and a block it enabled is disabled.
+- **Writes while enabled**: `RptID`, `DatSet`, `OptFlds`, `BufTm`, `TrgOps` and `IntgPd` are refused while enabled (c1 and the
+  table). A write of a data set that does not exist is refused; the NULL data set cannot be enabled (8-1 17.1.3).
+- **Enabling** resets `SqNum` to zero; the sequence number then increments per report and wraps after 255 (INT8U). Integrity, if on,
+  starts at enabling.
+- **Triggers**: the notifications of dchg, qchg and dupd count when their option is on; any other is ignored. Without a buffer time, each
+  notification is one report. With a buffer time (17.2.2.9), the notifications of the interval are combined into one report at the expiry,
+  and the next notification starts a new interval. A second notification of the same member during the interval sends the pending report
+  at once and restarts the interval: this is the strict reading of 17.2.2.9 for status values, and the substitution allowed for analogue
+  values is not taken.
+- **Integrity** (17.2.3.2.3.3): every member is reported at each period; the buffered notifications are sent first, as the text requires.
+  The period is re-armed from the instant of the expiry, not from the nominal time, so the timer is deterministic under controlled time.
+- **General interrogation** (17.2.3.2.3.4, figure 30): refused while disabled (`NO GI ALLOWED`); with the GI trigger on, the buffered
+  notifications are sent and then every member, with the reason GI; with the trigger off, the write is answered without a report. GI
+  is not kept as a state: it is set back to FALSE at once.
+- **Unbuffered block**: no event history (figure 30, NOTE), so a report is not kept for later; `OptFlds.buffer-overflow` and `entryID`
+  are not applicable (8-1: their value is false). The application's `Arm` replaces the previous expiry of the same timer.
+- **Not in D3**: the delivery and the encoding of the reports (D4), the reading of the attributes (GetURCBValues), the preconfigured
+  reservation and owner of an SCL `ClientLN` (the SCL build still refuses `ReportControl`, SCOPE-002, until D4 wires the block into the
+  server), and the BRCB (B tasks).
+- **Test**: `igs-iec61850-mms-core/tests/report_urcb.rs` (16 tests with controlled time): reservation by one client at a time, enabling
+  needs reservation and data set, configuration only by the holder and only while disabled, the sequence number restarts and wraps,
+  data-change without buffer time, triggers that are off, the buffer time, the repeated notification, integrity with its buffered
+  entries first, GI enabled and disabled, disabling drops pending notifications, loss of the holder, and the order of the entries.
+- **Confidence**: high for the transitions and the reservation rules (figures and clauses read); medium for the strict flush of a
+  repeated status notification and the re-arm rule of the integrity timer, which are readings to confront with a reference client.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
