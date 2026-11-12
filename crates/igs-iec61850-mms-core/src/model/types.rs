@@ -58,3 +58,16 @@ pub fn enumeration(name: &str) -> Option<TypeDescription> {
         .unwrap_or(0);
     Some(describe_enumeration(largest))
 }
+
+/// The values that an enumeration of the catalogue defines, in the namespace order. `None` for a name that the
+/// catalogue does not define as an enumeration.
+pub fn enumeration_values(name: &str) -> Option<Vec<i64>> {
+    let definition = catalogue::enumeration(name)?;
+    Some(
+        definition
+            .literals
+            .iter()
+            .map(|literal| i64::from(literal.value))
+            .collect(),
+    )
+}

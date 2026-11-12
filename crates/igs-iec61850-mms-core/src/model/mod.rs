@@ -209,16 +209,33 @@ pub struct Element {
     pub(crate) name: String,
     pub(crate) fc: Option<&'static str>,
     pub(crate) node: Node,
+    /// The member belongs to a controllable data object, whose writes go through its control state machine and
+    /// not directly (MODEL-005). Set on the data objects; the attributes inherit it in the layout.
+    pub(crate) stateful: bool,
 }
 
-/// The form of a member: a leaf of a basic, enumerated or fixed type, or a branch of constructed attributes or
-/// sub data objects.
+/// The form of a member: a leaf of a basic or fixed type, an enumeration with the values it defines, or a branch of
+/// constructed attributes or sub data objects.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
     /// A leaf, with its MMS type.
     Leaf(TypeDescription),
+    /// An enumeration: its MMS type, and the values the namespace defines (8-1 §8.1.2.2; the writes of §8.1.3.4.4.2).
+    Enumerated {
+        /// The MMS type.
+        ty: TypeDescription,
+        /// The defined values, in the namespace order.
+        values: Vec<i64>,
+    },
     /// A branch, with its members.
     Branch(Vec<Element>),
+}
+
+/// Whether a common data class is controllable: its class has the service attributes of 8-1 (`Oper`, `SBO`, `Cancel`).
+pub fn is_controllable(cdc: &str) -> bool {
+    catalogue::generated::ns_8_1::SERVICE_CDCS
+        .iter()
+        .any(|service| service.cdc == cdc)
 }
 
 impl Element {
@@ -235,6 +252,11 @@ impl Element {
     /// The form of the member.
     pub fn node(&self) -> &Node {
         &self.node
+    }
+
+    /// Whether the member belongs to a controllable data object (see [`is_controllable`]).
+    pub fn is_controllable(&self) -> bool {
+        self.stateful
     }
 }
 
@@ -296,6 +318,7 @@ impl LogicalNode {
                 name: spec.name.clone(),
                 fc: None,
                 node: Node::Branch(members),
+                stateful: is_controllable(candidate.cdc),
             });
         }
         Ok(Self {
@@ -468,6 +491,7 @@ fn members_of(
                 name: sub.name.to_string(),
                 fc: None,
                 node: Node::Branch(sub_members),
+                stateful: is_controllable(sub.cdc),
             });
         }
     }
@@ -496,6 +520,7 @@ fn attribute_element(
         name: attribute.name.to_string(),
         fc: Some(attribute.fc),
         node,
+        stateful: false,
     })
 }
 
@@ -527,9 +552,9 @@ fn resolve(
                 path: path.to_string(),
                 reason: "enumeration chosen by the instance is not mapped yet",
             })?;
-            types::enumeration(name)
-                .map(Node::Leaf)
-                .ok_or_else(unmapped)
+            let ty = types::enumeration(name).ok_or_else(unmapped)?;
+            let values = types::enumeration_values(name).ok_or_else(unmapped)?;
+            Ok(Node::Enumerated { ty, values })
         }
         TypeKind::Constructed => {
             let name = type_name.ok_or_else(unmapped)?;
@@ -547,6 +572,7 @@ fn resolve(
                     name: component.name.to_string(),
                     fc: None,
                     node,
+                    stateful: false,
                 });
             }
             Ok(Node::Branch(members))

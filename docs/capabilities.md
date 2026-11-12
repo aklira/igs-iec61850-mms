@@ -22,6 +22,9 @@ settles it. A gap is an item that is refused or reported explicitly, never serve
 | Classes with variants (the setting groups `SPG`, `ING`, ...) | Refused until the variant is chosen | D-008 |
 | Service attributes added by 8-1 to the controllable and reporting classes (`Oper`, `SBOw`, `Cancel`, the control blocks) | Not in the model yet: control and reporting tasks | D-008 |
 | Read of a served node or of a flattened name | Served, one value per node | D-010 |
-| Write to a served variable | Refused (`object-access-denied`) until the write guard (A4) | D-010 |
+| Write to a served variable | Served for `SP`, `SV`, `CF`, `DC` and `BL` attributes of non-controllable objects; refused otherwise (`object-access-denied`) | D-012 |
+| Write of an enumeration | Served with the values the namespace defines; others refused (`object-value-invalid`) | D-012 |
+| Writes to controllable objects (`SPC`, `DPC`, `ENC`, ...) | Refused until their control state machine (task K) | D-012, MODEL-005 |
+| Directory and definition (GetDataDirectory, GetDataDefinition, logical-node directory) | Served by GetVariableAccessAttributes and GetNameList; the logical-node filter is the client's (A6) | D-013 |
 | Alternate access | Refused item by item; `valt` is negotiated | D-009 |
 | Application extensions (the `EX` constraint, extension classes) | Not accepted | D-007 |

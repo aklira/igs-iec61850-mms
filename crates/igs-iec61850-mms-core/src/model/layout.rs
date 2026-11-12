@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//! The MMS layout of a logical node (IEC 61850-8-1 §7.3.1, §7.3.3, §7.3.4; task A3).
+//! The MMS layout of a logical node (IEC 61850-8-1 §7.3.1, §7.3.3, §7.3.4; tasks A3 and A4).
 //!
 //! A logical node is one MMS named variable, of a structure type with one component per functional constraint
 //! it instantiates, in the order of 8-1 Figure 4; each functional constraint holds one component per data object
@@ -14,6 +14,10 @@
 //! The flattened names of the functional-constraint level (`XCBR1$ST`) are not named variables: the examples of
 //! §7.3.3 start at the data object. A flattened name longer than the identifier limit of the profile is not
 //! listed; the number of such names is reported, and they remain reachable by alternate access (D-006).
+//!
+//! Each variable says whether an MMS Write may change it (D-012): the attributes of a constraint that the namespace
+//! lets SetDataValues write, outside the controllable data objects, whose writes go through their state machine.
+//! Each enumeration inside a variable says which values it defines (8-1 §8.1.3.4.4.2).
 
 use igs_iso9506_mms_codec::mms::{
     Data, DataMMSString, FloatingPoint, Identifier, TypeDescription, TypeDescriptionStructure,
@@ -22,6 +26,7 @@ use igs_iso9506_mms_codec::mms::{
 use igs_iso9506_mms_codec::schema::BitString as BitStringValue;
 
 use super::{Element, LogicalNode, ModelError, Node};
+use crate::catalogue;
 
 /// The identifier limit of the IEC 61850 MMS profile: 64 characters (8-1 Annex F.3.2).
 pub const IDENTIFIER_LIMIT: usize = 64;
@@ -32,7 +37,24 @@ pub const FUNCTIONAL_CONSTRAINT_ORDER: [&str; 22] = [
     "EX", "SR", "OR", "BL", "RG", "RS",
 ];
 
-/// A named variable of a logical node: its MMS name, the path of its components from the root, and its type.
+/// Whether an MMS Write may change the attributes of a functional constraint: the namespace lists SetDataValues among
+/// its services. The setting-group edit `SE` is changed by its own services, and the others are read-only.
+pub fn writable_constraint(fc: &str) -> bool {
+    catalogue::functional_constraint(fc).is_some_and(|f| f.services.contains(&"SetDataValues"))
+}
+
+/// The values that an enumeration inside a variable defines: the path of the enumeration from the variable, and the
+/// values the namespace defines for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefinedValues {
+    /// The indexes of the components from the variable to the enumeration. Empty when the variable is the enumeration.
+    pub path: Vec<usize>,
+    /// The values of the enumeration, in the namespace order.
+    pub values: Vec<i64>,
+}
+
+/// A named variable of a logical node: its MMS name, the path of its components from the root, its type, and what a
+/// write may do with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableLayout {
     /// The MMS name: the logical node itself, or the flattened name of the node.
@@ -41,6 +63,12 @@ pub struct VariableLayout {
     pub path: Vec<usize>,
     /// The MMS type of the variable.
     pub ty: TypeDescription,
+    /// The functional constraint of the variable. `None` for the logical node itself.
+    pub functional_constraint: Option<&'static str>,
+    /// Whether an MMS Write may change the variable (D-012). A variable with a read-only part is read-only.
+    pub writable: bool,
+    /// The enumerations inside the variable, with the values they define. A write holds only defined values.
+    pub enumerations: Vec<DefinedValues>,
 }
 
 /// The MMS layout of a logical node.
@@ -100,10 +128,53 @@ pub fn default_value(ty: &TypeDescription) -> Option<Data> {
     })
 }
 
-/// The type of a member: its leaf type, or the structure of its members.
+/// The value at a path of component indexes. `None` when the path leaves the structure.
+pub fn value_at<'a>(root: &'a Data, path: &[usize]) -> Option<&'a Data> {
+    let mut current = root;
+    for index in path {
+        match current {
+            Data::Structure(members) => current = members.get(*index)?,
+            _ => return None,
+        }
+    }
+    Some(current)
+}
+
+/// Replaces the value at a path of component indexes. `false` when the path leaves the structure, and the value is
+/// then not written.
+pub fn set_at(root: &mut Data, path: &[usize], value: Data) -> bool {
+    match path.split_first() {
+        None => {
+            *root = value;
+            true
+        }
+        Some((index, rest)) => match root {
+            Data::Structure(members) => match members.get_mut(*index) {
+                Some(member) => set_at(member, rest, value),
+                None => false,
+            },
+            _ => false,
+        },
+    }
+}
+
+/// Whether every enumeration inside a value holds one of the values it defines (8-1 §8.1.3.4.4.2: a value beyond the
+/// defined set is refused). A value that lacks an enumeration does not hold the defined values, so it is refused too.
+pub fn defines_enumerations(value: &Data, enumerations: &[DefinedValues]) -> bool {
+    enumerations
+        .iter()
+        .all(|defined| match value_at(value, &defined.path) {
+            Some(Data::Integer(number)) => {
+                i64::try_from(*number).is_ok_and(|number| defined.values.contains(&number))
+            }
+            _ => false,
+        })
+}
+
+/// The type of a member: its leaf or enumeration type, or the structure of its members.
 fn describe(element: &Element) -> TypeDescription {
     match &element.node {
-        Node::Leaf(ty) => ty.clone(),
+        Node::Leaf(ty) | Node::Enumerated { ty, .. } => ty.clone(),
         Node::Branch(members) => {
             let parts: Vec<(String, TypeDescription)> = members
                 .iter()
@@ -127,73 +198,141 @@ fn structure(parts: Vec<(String, TypeDescription)>) -> TypeDescription {
     })
 }
 
-/// A flattened name of a view: its name below the view, the path of its components inside the view, and its type.
+/// The enumerations inside a member, with their paths from the member.
+fn enumerations_of(element: &Element) -> Vec<DefinedValues> {
+    match &element.node {
+        Node::Leaf(_) => Vec::new(),
+        Node::Enumerated { values, .. } => vec![DefinedValues {
+            path: Vec::new(),
+            values: values.clone(),
+        }],
+        Node::Branch(members) => members
+            .iter()
+            .enumerate()
+            .flat_map(|(index, member)| with_prefix(index, enumerations_of(member)))
+            .collect(),
+    }
+}
+
+/// The same enumerations, with the index of their component prepended to their paths.
+fn with_prefix(index: usize, mut defined: Vec<DefinedValues>) -> Vec<DefinedValues> {
+    for item in &mut defined {
+        item.path.insert(0, index);
+    }
+    defined
+}
+
+/// A flattened name of a view: its name below the view, the path of its components inside the view, its type, and
+/// what a write may do with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Flat {
     name: String,
     path: Vec<usize>,
     ty: TypeDescription,
+    fc: &'static str,
+    writable: bool,
+    enumerations: Vec<DefinedValues>,
 }
 
-/// The components of a view of the members under one functional constraint, and their flattened names.
+/// The components of a view of the members under one functional constraint, with their flattened names and the
+/// enumerations inside them.
 #[derive(Debug, Default)]
 struct View {
     components: Vec<(String, TypeDescription)>,
     flat: Vec<Flat>,
+    enumerations: Vec<DefinedValues>,
 }
 
 /// Pushes a member as a whole, with its flattened names; its path is `path`.
-fn flatten(name: &str, path: Vec<usize>, element: &Element, out: &mut Vec<Flat>) {
+fn flatten(
+    name: &str,
+    path: Vec<usize>,
+    element: &Element,
+    fc: &'static str,
+    writable: bool,
+    out: &mut Vec<Flat>,
+) {
     out.push(Flat {
         name: name.to_string(),
         path: path.clone(),
         ty: describe(element),
+        fc,
+        writable,
+        enumerations: enumerations_of(element),
     });
     if let Node::Branch(members) = &element.node {
         for (index, member) in members.iter().enumerate() {
             let mut child_path = path.clone();
             child_path.push(index);
-            flatten(&format!("{name}${}", member.name), child_path, member, out);
+            flatten(
+                &format!("{name}${}", member.name),
+                child_path,
+                member,
+                fc,
+                writable,
+                out,
+            );
         }
     }
 }
 
 /// The view of `members` under `fc`. A member with the constraint is taken whole; a sub data object (a member
-/// without constraint) is taken when one of its own members has it.
-fn view(members: &[Element], fc: &str) -> View {
+/// without constraint) is taken when one of its own members has it. `stateful` is set below a controllable data
+/// object, whose attributes are then read-only.
+fn view(members: &[Element], fc: &'static str, stateful: bool) -> View {
+    let writable = !stateful && writable_constraint(fc);
     let mut out = View::default();
     for member in members {
         match member.fc {
             Some(own) if own == fc => {
                 let index = out.components.len();
                 out.components.push((member.name.clone(), describe(member)));
-                flatten(&member.name, vec![index], member, &mut out.flat);
+                flatten(
+                    &member.name,
+                    vec![index],
+                    member,
+                    fc,
+                    writable,
+                    &mut out.flat,
+                );
+                out.enumerations
+                    .extend(with_prefix(index, enumerations_of(member)));
             }
             Some(_) => {}
             None => {
-                if let Node::Branch(children) = &member.node {
-                    let inner = view(children, fc);
-                    if inner.components.is_empty() {
-                        continue;
-                    }
-                    let index = out.components.len();
-                    let ty = structure(inner.components);
-                    out.components.push((member.name.clone(), ty.clone()));
-                    out.flat.push(Flat {
-                        name: member.name.clone(),
-                        path: vec![index],
-                        ty: ty.clone(),
-                    });
-                    for flat in inner.flat {
-                        let mut path = vec![index];
-                        path.extend(flat.path);
-                        out.flat.push(Flat {
-                            name: format!("{}${}", member.name, flat.name),
-                            path,
-                            ty: flat.ty,
-                        });
-                    }
+                let Node::Branch(children) = &member.node else {
+                    continue;
+                };
+                let inner = view(children, fc, stateful || member.stateful);
+                let View {
+                    components,
+                    flat,
+                    enumerations,
+                } = inner;
+                if components.is_empty() {
+                    continue;
                 }
+                let index = out.components.len();
+                let ty = structure(components);
+                out.components.push((member.name.clone(), ty.clone()));
+                out.flat.push(Flat {
+                    name: member.name.clone(),
+                    path: vec![index],
+                    ty,
+                    fc,
+                    writable: writable && !member.stateful,
+                    enumerations: enumerations.clone(),
+                });
+                for item in flat {
+                    let mut path = vec![index];
+                    path.extend(item.path.iter().copied());
+                    out.flat.push(Flat {
+                        name: format!("{}${}", member.name, item.name),
+                        path,
+                        ..item
+                    });
+                }
+                out.enumerations.extend(with_prefix(index, enumerations));
             }
         }
     }
@@ -206,19 +345,23 @@ pub fn layout(node: &LogicalNode, limit: usize) -> Result<LnLayout, ModelError> 
     let mut components: Vec<(String, TypeDescription)> = Vec::new();
     let mut flat: Vec<Flat> = Vec::new();
     for fc in FUNCTIONAL_CONSTRAINT_ORDER {
-        let inner = view(objects, fc);
-        if inner.components.is_empty() {
+        let View {
+            components: parts,
+            flat: items,
+            ..
+        } = view(objects, fc, false);
+        if parts.is_empty() {
             continue;
         }
         let index = components.len();
-        components.push((fc.to_string(), structure(inner.components)));
-        for item in inner.flat {
+        components.push((fc.to_string(), structure(parts)));
+        for item in items {
             let mut path = vec![index];
             path.extend(item.path.iter().copied());
             flat.push(Flat {
                 name: format!("{fc}${}", item.name),
                 path,
-                ty: item.ty,
+                ..item
             });
         }
     }
@@ -232,10 +375,13 @@ pub fn layout(node: &LogicalNode, limit: usize) -> Result<LnLayout, ModelError> 
         name: node.name().to_string(),
         path: Vec::new(),
         ty: root.clone(),
+        functional_constraint: None,
+        writable: false,
+        enumerations: Vec::new(),
     }];
     let mut long_names = 0usize;
     for item in flat {
-        // The first component is the functional constraint: its own name is not a variable (D-006).
+        // A variable below the functional constraint: its path has the constraint, then the data object.
         if item.path.len() < 2 {
             continue;
         }
@@ -248,6 +394,9 @@ pub fn layout(node: &LogicalNode, limit: usize) -> Result<LnLayout, ModelError> 
             name,
             path: item.path,
             ty: item.ty,
+            functional_constraint: Some(item.fc),
+            writable: item.writable,
+            enumerations: item.enumerations,
         });
     }
     Ok(LnLayout {

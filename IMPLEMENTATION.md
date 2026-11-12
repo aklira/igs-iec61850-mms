@@ -535,7 +535,7 @@ The agent does not wait for these; it records the impact and continues with what
 | A1 Object references and MMS names | [x] |
 | A2 ACSI types and their MMS mapping | [x] |
 | A3 Server model | [x] |
-| A4 Server data access | [ ] |
+| A4 Server data access | [x] |
 | A5 Application event path and clock source | [ ] |
 | A6 Client discovery and data access | [ ] |
 | A7 Data-access interop | [ ] |

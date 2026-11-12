@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//! A model built in code, served over MMS and read by the MMS client (task A3): the GetNameList and the
+//! A model built in code, served over MMS and read by the MMS client (tasks A3 and A4): the GetNameList and the
 //! GetVariableAccessAttributes answers, and the one value behind a node and its flattened names.
 
 #![allow(
@@ -12,136 +12,12 @@
     clippy::arithmetic_side_effects
 )]
 
-use std::time::Duration;
+mod common;
 
-use igs_iec61850_mms::model::{client_config, server_config, ServedModel};
-use igs_iec61850_mms_core::catalogue;
-use igs_iec61850_mms_core::model::{
-    is_required, DataObjectSpec, LogicalDevice, LogicalNode, ServerModel,
-};
-use igs_iso9506_mms::server::Server;
-use igs_iso9506_mms::vmd::Identity;
-use igs_iso9506_mms::{Client, ClientConfig, Reconnect};
+use common::{all_names, domain_item, one, start};
 use igs_iso9506_mms_codec::generated::types::{
-    AccessResult, Data, GetNameListRequest, GetNameListRequestObjectScope,
-    GetVariableAccessAttributesRequest, Identifier, ObjectClass, ObjectClassBasicObjectClass,
-    ObjectName, ObjectNameDomainSpecific, ReadRequest, TypeDescription,
-    VariableAccessSpecification, VariableAccessSpecificationListOfVariableItem,
-    VariableSpecification,
+    AccessResult, Data, GetVariableAccessAttributesRequest, ReadRequest, TypeDescription,
 };
-use igs_iso9506_mms_link::config::LinkConfig;
-
-const DOMAIN: &str = "IED1LD1";
-
-/// The mandatory data objects of a class, and the named ones after them.
-fn with(class: &str, named: Vec<DataObjectSpec>) -> Vec<DataObjectSpec> {
-    let mut specs: Vec<DataObjectSpec> = catalogue::ln_class(class)
-        .expect("the class is in the catalogue")
-        .all_data_objects()
-        .into_iter()
-        .filter(|object| is_required(&object.presence))
-        .map(|object| DataObjectSpec::new(object.name))
-        .collect();
-    specs.extend(named);
-    specs
-}
-
-/// The model: the device `IED1LD1` with the node `GGIO1` (a status and a measurement) and a node whose name is
-/// long enough for its flattened names to pass the identifier limit of the ISO profile.
-fn model() -> ServerModel {
-    let ggio = LogicalNode::new(
-        "GGIO1",
-        "GGIO",
-        &with(
-            "GGIO",
-            vec![DataObjectSpec::new("Ind1"), DataObjectSpec::new("AnIn1")],
-        ),
-    )
-    .expect("the node is valid");
-    let mmxu = LogicalNode::new(
-        "MMXU1234567890123456",
-        "MMXU",
-        &with("MMXU", vec![DataObjectSpec::new("TotW")]),
-    )
-    .expect("the node is valid");
-    let device = LogicalDevice::new(DOMAIN, vec![ggio, mmxu]).expect("the device is valid");
-    let mut server = ServerModel::new();
-    server.add_device(device).expect("a new device");
-    server
-}
-
-fn identity() -> Identity {
-    Identity {
-        vendor: "igs".to_string(),
-        model: "served".to_string(),
-        revision: "1".to_string(),
-    }
-}
-
-fn domain_item(item: &str) -> ObjectName {
-    ObjectName::DomainSpecific(ObjectNameDomainSpecific {
-        domain_id: Identifier(DOMAIN.to_string()),
-        item_id: Identifier(item.to_string()),
-    })
-}
-
-fn one(object: ObjectName) -> VariableAccessSpecification {
-    VariableAccessSpecification::ListOfVariable(vec![
-        VariableAccessSpecificationListOfVariableItem {
-            variable_specification: VariableSpecification::Name(object),
-            alternate_access: None,
-        },
-    ])
-}
-
-/// Starts the served model and connects a client to it, both on the IEC 61850 profile.
-async fn start() -> (Server, Client) {
-    let served = ServedModel::new(&model(), identity()).expect("the model is served");
-    let config = server_config(LinkConfig::default());
-    let server = Server::bind_model("127.0.0.1:0", config, served)
-        .await
-        .expect("the server binds");
-    let address = server.local_address().to_string();
-    let client_config = ClientConfig {
-        reconnect: Reconnect::Never,
-        ..client_config(LinkConfig::default())
-    };
-    let (client, _events) = tokio::time::timeout(
-        Duration::from_secs(10),
-        Client::connect(&address, client_config),
-    )
-    .await
-    .expect("the association is established in time")
-    .expect("the association is accepted");
-    (server, client)
-}
-
-/// Every named variable of the domain, over the pages of GetNameList.
-async fn all_names(client: &Client) -> Vec<String> {
-    let mut all = Vec::new();
-    let mut after: Option<Identifier> = None;
-    loop {
-        let request = GetNameListRequest {
-            object_class: ObjectClass::BasicObjectClass(
-                ObjectClassBasicObjectClass::NAMED_VARIABLE,
-            ),
-            object_scope: GetNameListRequestObjectScope::DomainSpecific(Identifier(
-                DOMAIN.to_string(),
-            )),
-            continue_after: after.clone(),
-        };
-        let page = client
-            .get_name_list(request)
-            .await
-            .expect("the names are listed");
-        all.extend(page.list_of_identifier.iter().map(|name| name.0.clone()));
-        if !page.more_follows.unwrap_or(true) {
-            break;
-        }
-        after = page.list_of_identifier.last().cloned();
-    }
-    all
-}
 
 #[tokio::test]
 async fn get_name_list_lists_the_node_and_its_flattened_names() {
@@ -189,7 +65,7 @@ async fn get_variable_access_attributes_gives_the_type_of_each_level() {
         .map(|component| component.component_name.as_ref().unwrap().0.clone())
         .collect();
     // Only the constraints that the node instantiates, in the order of Figure 4 of 8-1.
-    assert_eq!(functional_constraints, ["MX", "ST"]);
+    assert_eq!(functional_constraints, ["MX", "ST", "SV"]);
     client.close().await.unwrap();
     server.shutdown().await;
 }

@@ -236,6 +236,46 @@ silent, to be confirmed by an observation test against other implementations.
 - **Why**: the new path dependency on `igs-iso9506-mms` brings its dependency tree, which the list did not cover.
 - **Confidence**: high; the licence is permissive and the crate is data tables only.
 
+### D-012 — What an MMS Write may change in the served model (task A4)
+
+- **Decision**: a variable of the served model accepts a Write when all of its parts accept it:
+  - the functional constraint of the variable is one that the namespace lists with the service `SetDataValues` in
+    the catalogue (`SP`, `SV`, `CF`, `DC`, `BL`); `SE` is written by its own services, and the others are read-only;
+  - the variable does not belong to a controllable data object, that is, a data object whose class has the service
+    attributes of 8-1 (`SPC`, `DPC`, `INC`, `ENC`, `BSC`, `ISC`, `APC`, `BAC`). Its writes go through the control state
+    machine (MODEL-005), which does not exist yet (task K); until then they are refused;
+  - the logical node as a whole is never written: its constraints differ.
+  A Write to a read-only part refuses the whole variable (8-1 §8.1.3.4.4.2: a read-only sub-component makes the
+  variable read-only).
+- **Enumerations**: a value written to an enumeration must be one that the namespace defines (8-1 §8.1.3.4.4.2, and its
+  NOTE for the positive and the negative ranges). A value the MMS integer holds, but the namespace does not define, is
+  refused with `object-value-invalid`. A value outside the MMS integer is refused as `type-inconsistent` by the VMD,
+  before the variable sees it.
+- **Errors** (8-1 Table 27): `object-access-denied` for a read-only variable, `type-inconsistent` for a value of another
+  type, `object-value-invalid` for an undefined enumeration value, `object-non-existent` for a path that is gone. The
+  results are per item (ACSI-002): a Write of several items answers each one.
+- **Sources**: IEC 61850-7-2 (the services of each functional constraint, as the catalogue of the namespace gives them); IEC 61850-8-1 §8.1.2.1
+  (NOTE), §8.1.3.4.4.2 and Table 27, §13.4.2 and Table 54.
+- **Confidence**: high for the constraints and the error codes; medium for the controllable classes as the set of
+  objects whose writes wait for the state machine: the namespace gives the class, not the state rules.
+- **Test**: `crates/igs-iec61850-mms-core/tests/access.rs` (constraints, controllable objects, enumerations, paths);
+  `crates/igs-iec61850-mms/tests/served_writes.rs` (the results of each refusal and of each write, per item).
+
+### D-013 — Directory and definition services, and the state of AT-07 (task A4)
+
+- **Decision**: the directory and definition services of the ACSI are answered by the two MMS services that the model
+  already serves. GetDataDirectory and GetDataDefinition are GetVariableAccessAttributes on the name of a data object
+  (8-1 Tables 55 and 13.4.4): the components of the structure are the attribute names. The logical-node directory is
+  GetNameList on the domain, with the names of the nodes, and the client keeps the names that have no `$` (8-1 Table 50).
+  The server does not filter the list: it lists all the named variables, as the VMD does.
+- **AT-07**: the done-when of A4 names the in-process client of A6, which is not built. The test uses the MMS client
+  against the served model, which covers the services; AT-07 is complete with A6, and the directory filter of the client
+  is then tested there.
+- **Confidence**: high for the mapping of Tables 54 and 55; medium for the filter of the logical-node directory, which
+  the client applies (Table 50 read at the level of its classes, not its service text).
+- **Test**: `served_writes.rs` (`the_directory_of_a_data_object_lists_its_attributes`); `served_model.rs`
+  (`get_variable_access_attributes_gives_the_type_of_each_level`, `get_name_list_lists_the_node_and_its_flattened_names`).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

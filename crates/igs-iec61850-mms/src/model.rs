@@ -12,7 +12,9 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use igs_iec61850_mms_core::model::layout::{layout, IDENTIFIER_LIMIT};
+use igs_iec61850_mms_core::model::layout::{
+    defines_enumerations, layout, set_at, value_at, DefinedValues, IDENTIFIER_LIMIT,
+};
 use igs_iec61850_mms_core::model::{ModelError, ServerModel};
 use igs_iso9506_mms::client::{in_scope_capabilities, ClientConfig};
 use igs_iso9506_mms::server::{Model, Peer};
@@ -102,11 +104,13 @@ impl From<VmdError> for ServeError {
     }
 }
 
-/// A named variable of a logical node: a path into the value of the node.
+/// A named variable of a logical node: a path into the value of the node, and what a write may do to it (A4).
 struct NodeVariable {
     root: Arc<Mutex<Data>>,
     path: Vec<usize>,
     ty: TypeDescription,
+    writable: bool,
+    enumerations: Vec<DefinedValues>,
 }
 
 impl Variable for NodeVariable {
@@ -115,7 +119,7 @@ impl Variable for NodeVariable {
     }
 
     fn is_writable(&self) -> bool {
-        false
+        self.writable
     }
 
     fn read(&self) -> Result<Data, DataAccessError> {
@@ -128,21 +132,25 @@ impl Variable for NodeVariable {
             .ok_or(DataAccessError::OBJECT_VALUE_INVALID)
     }
 
-    fn write(&mut self, _value: Data) -> Result<(), DataAccessError> {
-        Err(DataAccessError::OBJECT_ACCESS_DENIED)
-    }
-}
-
-/// The member of a value at a path of component indexes. `None` when the path leaves the structure.
-fn value_at<'a>(root: &'a Data, path: &[usize]) -> Option<&'a Data> {
-    let mut current = root;
-    for index in path {
-        match current {
-            Data::Structure(members) => current = members.get(*index)?,
-            _ => return None,
+    /// Replaces the value. The write has been checked against the type of the variable by the VMD; here the
+    /// enumerations must hold defined values (8-1 §8.1.3.4.4.2), and the write is refused for a read-only variable.
+    fn write(&mut self, value: Data) -> Result<(), DataAccessError> {
+        if !self.writable {
+            return Err(DataAccessError::OBJECT_ACCESS_DENIED);
+        }
+        if !defines_enumerations(&value, &self.enumerations) {
+            return Err(DataAccessError::OBJECT_VALUE_INVALID);
+        }
+        let mut root = self
+            .root
+            .lock()
+            .map_err(|_| DataAccessError::TEMPORARILY_UNAVAILABLE)?;
+        if set_at(&mut root, &self.path, value) {
+            Ok(())
+        } else {
+            Err(DataAccessError::OBJECT_NON_EXISTENT)
         }
     }
-    Some(current)
 }
 
 /// The VMD of a server model: one domain per logical device, and per logical node its named variable and its
@@ -162,6 +170,8 @@ pub fn serve(server: &ServerModel, identity: Identity) -> Result<Vmd, ServeError
                     root: Arc::clone(&root),
                     path: variable.path,
                     ty: variable.ty,
+                    writable: variable.writable,
+                    enumerations: variable.enumerations,
                 };
                 vmd.add_variable(&target, Box::new(view))?;
             }
