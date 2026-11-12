@@ -13,7 +13,7 @@
 use std::fmt;
 
 use igs_iec61850_mms_core::discovery::{
-    check_page, define, functional_groups, logical_nodes, Definition, DefinitionError, Group,
+    define, functional_groups, logical_nodes, Definition, DefinitionError, Group, Listing,
     PagingError,
 };
 use igs_iec61850_mms_core::names::{MmsIdentifier, MmsName, Name, NameError, Scope};
@@ -266,13 +266,12 @@ impl IecClient {
         class: ObjectClassBasicObjectClass,
         scope: GetNameListRequestObjectScope,
     ) -> Result<Vec<String>, ClientError> {
-        let mut all = Vec::new();
-        let mut after: Option<String> = None;
+        let mut listing = Listing::new();
         loop {
             let request = GetNameListRequest {
                 object_class: ObjectClass::BasicObjectClass(class.clone()),
                 object_scope: scope.clone(),
-                continue_after: after.clone().map(Identifier),
+                continue_after: listing.last().map(|last| Identifier(last.to_string())),
             };
             let response = self
                 .client
@@ -285,14 +284,10 @@ impl IecClient {
                 .map(|identifier| identifier.0)
                 .collect();
             let more = response.more_follows.unwrap_or(true);
-            check_page(after.as_deref(), &page, more).map_err(ClientError::Paging)?;
-            let last = page.last().cloned();
-            all.extend(page);
+            listing.add_page(&page, more).map_err(ClientError::Paging)?;
             if !more {
-                return Ok(all);
+                return Ok(listing.into_names());
             }
-            // More follow, and check_page refused an empty page: the last name is there.
-            after = Some(last.ok_or(ClientError::Paging(PagingError::Stalled))?);
         }
     }
 

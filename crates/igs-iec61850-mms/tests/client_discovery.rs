@@ -17,7 +17,7 @@ mod common;
 use common::{all_names, start};
 use igs_iec61850_mms::client::{ClientError, IecClient, ItemError};
 use igs_iec61850_mms_core::catalogue;
-use igs_iec61850_mms_core::discovery::{Definition, Leaf};
+use igs_iec61850_mms_core::discovery::{Definition, Leaf, Size};
 use igs_iec61850_mms_core::names::{MmsIdentifier, MmsName, Name, Scope};
 use igs_iso9506_mms_codec::generated::types::Data;
 
@@ -105,7 +105,12 @@ async fn a_data_object_is_defined_by_its_attributes_and_accepts_its_values() {
     assert_eq!(attribute("stVal"), Definition::Leaf(Leaf::Boolean));
     assert_eq!(
         attribute("q"),
-        Definition::Leaf(Leaf::BitString { bits: 13 })
+        Definition::Leaf(Leaf::BitString {
+            size: Size {
+                length: 13,
+                variable: false
+            }
+        })
     );
     assert_eq!(attribute("t"), Definition::Leaf(Leaf::UtcTime));
 

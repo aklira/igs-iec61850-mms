@@ -15,6 +15,9 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+# The command line of the binaries (task A7; MIT or Apache-2.0, the same derive as the MMS client).
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 igs-iec61850-mms-core = { path = "../igs-iec61850-mms-core", version = "0.1.0" }
 # The MMS stack the model is served on: its VMD and its model interface (task A3).
 igs-iso9506-mms = { path = "../../../igs-iso9506-mms/crates/igs-iso9506-mms", version = "1.1.0" }

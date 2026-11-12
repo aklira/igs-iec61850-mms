@@ -329,9 +329,16 @@ silent, to be confirmed by an observation test against other implementations.
   whose exponent is not shorter than its format, a negative length); it is an error with its path. A description nested
   beyond `MAX_DEPTH` is refused, not followed.
   - The logical nodes of a device are the named variables with no `$`; the flattened names are not nodes (D-013).
-  - A listing is read page by page with `continueAfter` (the last name of the page). A page is refused when a name repeats
-    or is not after the one before it, and a page that is empty while more follow is refused as stalled. So a listing
-    neither skips nor counts twice a name (ACSI-001).
+  - A listing is read page by page with `continueAfter` (the last name of the page). A name that repeats over the pages
+    is refused, and a page that is empty while more follow is refused as stalled, so that a listing neither counts a name
+    twice nor goes on without end (ACSI-001). The order of the names is the order of the server, which MMS does not fix.
+  - **Amendment (interop, task A7)**: the first version refused a page that was not sorted, which the reference server
+    breaks: its names are in its own order, and a sorted check refused its listing (`GGIO1$CO$SPCSO1$Oper$T`). The check is
+    now on repeats only (`Listing`, `PagingError::Repeated`), with a bound on the number of names (`MAX_LISTED_NAMES`).
+  - **Amendment (interop, task A7)**: the reference server describes its bit strings and strings with a negative size
+    (`BitString(-13)`, `VisibleString(-255)`). A negative size is a variable length, with the absolute value as its maximum
+    (ISO 9506-2 §14.2.2.4.2, as the MMS conformance rule of igs-iso9506-mms reads it). It is not malformed: `Size { length,
+    variable }`. A zero size of a bit string stays malformed (no zero-length bit string, IEC 61850-8-1 §8.1.2.1).
   - The result of a read or a write has one entry per item, in the order of the items (ACSI-002).
 - **The error of an item** (8-1 Tables 26 and 27): `object-access-denied` is `AccessViolation`; `object-non-existent` is
   `InstanceNotAvailable`; `type-inconsistent` is `TypeConflict` (writes); `object-value-invalid` is
@@ -346,6 +353,24 @@ silent, to be confirmed by an observation test against other implementations.
 - **Test**: `crates/igs-iec61850-mms-core/tests/discovery.rs` (the states, the malformed cases, the nesting, the groups, the
   logical nodes, the pages); `crates/igs-iec61850-mms/tests/client_discovery.rs` (AT-07, client side, against the served
   model: the listings, the definitions, the acceptance of a value, the read and write results per item).
+
+### D-017 — The interop rows: protocol criteria, functional gaps documented (task A7)
+
+- **Decision**: a row of the bench matrix passes when the protocol criteria hold: the association is accepted, the
+  capture decodes cleanly (the known Wireshark artefact excepted), and, for the reverse rows, every request of the example
+  is answered. The functional part of an example (the values it reads, the controls it operates, the reports it reads) is
+  not a criterion of the row: where our model or our stack does not provide it, the gap is written in `docs/interop.md`,
+  with the task that closes it. A gap is never a silent skip.
+- **The script of the direct rows** takes its node and its status object from the discovery, so that it runs against any
+  example. A status object is chosen among those that describe a `stVal`. A client never writes a status: the write is
+  expected to be refused, and the row checks that it is.
+- **Why**: the example servers and clients are configured for their own models; a row that demanded their values would
+  test the fixtures, not the stack. The protocol criteria are the ones the standard fixes (8-1 Tables 26 and 27 and the
+  request-response pairing), and they are checked on the wire.
+- **Confidence**: high for the protocol criteria, since they are the ones the captures show; medium for the functional gaps'
+  list, which is the state of the rows at the date of the run, and is re-run with each change of the bench.
+- **Test**: `bench/tests/test_a7_data_access.py` (7 rows), `bench/tests/test_a7_reverse.py` (6 rows); the campaign of the
+  last run is in the task log.
 
 ## Third-party code and sources
 

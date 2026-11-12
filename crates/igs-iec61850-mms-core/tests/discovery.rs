@@ -14,8 +14,8 @@
 )]
 
 use igs_iec61850_mms_core::discovery::{
-    check_page, define, functional_groups, logical_nodes, Definition, DefinitionError, Leaf,
-    Member, PagingError,
+    define, functional_groups, logical_nodes, Definition, DefinitionError, Leaf, Listing, Member,
+    PagingError, Size,
 };
 use igs_iso9506_mms_codec::mms::{
     Identifier, Integer32, TypeDescription, TypeDescriptionFloatingPoint, TypeDescriptionStructure,
@@ -57,7 +57,12 @@ fn the_basic_types_are_rebuilt_as_their_leaves() {
     );
     assert_eq!(
         leaves(&TypeDescription::BitString(Integer32(13))),
-        Definition::Leaf(Leaf::BitString { bits: 13 })
+        Definition::Leaf(Leaf::BitString {
+            size: Size {
+                length: 13,
+                variable: false
+            }
+        })
     );
     assert_eq!(
         leaves(&TypeDescription::UtcTime),
@@ -92,7 +97,12 @@ fn a_structure_keeps_its_named_members_in_order() {
             },
             Member {
                 name: "q".to_string(),
-                definition: Definition::Leaf(Leaf::BitString { bits: 13 }),
+                definition: Definition::Leaf(Leaf::BitString {
+                    size: Size {
+                        length: 13,
+                        variable: false
+                    }
+                }),
             },
         ])
     );
@@ -164,8 +174,25 @@ fn a_malformed_description_is_an_error_with_its_path() {
     });
     assert!(define(&exponent, "obj").is_err());
 
-    let negative = TypeDescription::VisibleString(Integer32(-1));
-    assert!(define(&negative, "obj").is_err());
+    // A negative size is a variable length of at most its absolute value (D-016): not an error.
+    assert_eq!(
+        define(&TypeDescription::VisibleString(Integer32(-255)), "obj"),
+        Ok(Definition::Leaf(Leaf::VisibleString {
+            size: Size {
+                length: 255,
+                variable: true
+            }
+        }))
+    );
+    assert_eq!(
+        define(&TypeDescription::BitString(Integer32(-13)), "obj"),
+        Ok(Definition::Leaf(Leaf::BitString {
+            size: Size {
+                length: 13,
+                variable: true
+            }
+        }))
+    );
 
     let nested = structure(vec![named(
         "inner",
@@ -230,34 +257,50 @@ fn the_logical_nodes_are_the_named_variables_without_a_dollar() {
     assert_eq!(logical_nodes(&variables), names(&["GGIO1", "MMXU1"]));
 }
 
+/// A listing of the pages, with the flag of each page.
+fn listed(pages: &[(&[&str], bool)]) -> Result<Vec<String>, PagingError> {
+    let mut listing = Listing::new();
+    for (page, more) in pages {
+        listing.add_page(&names(page), *more)?;
+    }
+    Ok(listing.into_names())
+}
+
 #[test]
-fn a_page_continues_the_listing_in_order() {
-    assert!(check_page(None, &names(&["a", "b"]), true).is_ok());
-    assert!(check_page(Some("b"), &names(&["c", "d"]), false).is_ok());
-    assert!(
-        check_page(None, &[], false).is_ok(),
+fn the_pages_of_a_listing_are_kept_in_the_order_of_the_server() {
+    // The server's order is its own: a listing is not sorted, and the pages keep it.
+    assert_eq!(
+        listed(&[(&["b", "a"], true), (&["c"], false)]),
+        Ok(names(&["b", "a", "c"]))
+    );
+    assert_eq!(
+        listed(&[(&[], false)]),
+        Ok(Vec::new()),
         "an empty last page ends the listing"
     );
 }
 
 #[test]
-fn a_repeated_or_misordered_name_is_refused() {
+fn a_name_repeated_over_the_pages_is_refused() {
     assert_eq!(
-        check_page(Some("b"), &names(&["b", "c"]), false),
-        Err(PagingError::OutOfOrder {
-            name: "b".to_string()
-        }),
-        "the first name repeats the last one of the previous page"
+        listed(&[(&["b", "c"], true), (&["c", "d"], false)]),
+        Err(PagingError::Repeated {
+            name: "c".to_string()
+        })
     );
     assert_eq!(
-        check_page(None, &names(&["c", "a"]), false),
-        Err(PagingError::OutOfOrder {
-            name: "a".to_string()
-        })
+        listed(&[(&["x", "x"], false)]),
+        Err(PagingError::Repeated {
+            name: "x".to_string()
+        }),
+        "a repeat within one page is a repeat too"
     );
 }
 
 #[test]
 fn a_listing_that_stalls_is_refused() {
-    assert_eq!(check_page(Some("b"), &[], true), Err(PagingError::Stalled));
+    assert_eq!(
+        listed(&[(&["b"], true), (&[], true)]),
+        Err(PagingError::Stalled)
+    );
 }

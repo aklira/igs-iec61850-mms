@@ -26,3 +26,16 @@ pub mod clock;
 pub mod updates;
 
 pub mod client;
+
+pub mod demo;
+
+use igs_iso9506_mms::vmd::Identity;
+
+/// The identity the demonstration servers report: vendor, model and revision of the VMD.
+pub fn server_identity() -> Identity {
+    Identity {
+        vendor: "igs".to_string(),
+        model: "igs61850-demo".to_string(),
+        revision: env!("CARGO_PKG_VERSION").to_string(),
+    }
+}

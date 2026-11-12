@@ -23,6 +23,17 @@ use igs_iso9506_mms_codec::generated::types::{Identifier, TypeDescription, TypeS
 
 use crate::model::MAX_DEPTH;
 
+/// The size of a string or of a bit string. A size that is not negative is a fixed length. A negative size is the
+/// maximum of a variable length (ISO 9506-2 §14.2.2.4.2): this is how the reference server describes its quality
+/// (`BitString(-13)`) and its strings (D-016).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Size {
+    /// The length, or the maximum length of a variable one.
+    pub length: u32,
+    /// Whether the length varies, up to `length`.
+    pub variable: bool,
+}
+
 /// A leaf of a definition: a type of the MMS mapping, or a type the client keeps without knowing its meaning.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Leaf {
@@ -45,25 +56,25 @@ pub enum Leaf {
         /// The size of the exponent, in bits.
         exponent_width: u8,
     },
-    /// A bit string of this many bits (at least one).
+    /// A bit string of this size, in bits (at least one bit).
     BitString {
-        /// The number of bits.
-        bits: u32,
+        /// The size.
+        size: Size,
     },
-    /// An octet string of at most this many octets.
+    /// An octet string of this size, in octets.
     OctetString {
-        /// The largest length.
-        max: u32,
+        /// The size.
+        size: Size,
     },
-    /// A visible string of at most this many characters.
+    /// A visible string of this size, in characters.
     VisibleString {
-        /// The largest length.
-        max: u32,
+        /// The size.
+        size: Size,
     },
-    /// A UTF-8 string of at most this many characters.
+    /// A UTF-8 string of this size, in characters.
     MmsString {
-        /// The largest length.
-        max: u32,
+        /// The size.
+        size: Size,
     },
     /// A UTC time: eight octets (Annex F.3.1).
     UtcTime,
@@ -211,19 +222,16 @@ fn define_at(
             })
         }
         TypeDescription::BitString(size) => Definition::Leaf(Leaf::BitString {
-            bits: u32::try_from(size.0)
-                .ok()
-                .filter(|bits| *bits > 0)
-                .ok_or_else(|| malformed(path, "a bit string of no bit"))?,
+            size: size_of(size.0, path, true)?,
         }),
         TypeDescription::OctetString(size) => Definition::Leaf(Leaf::OctetString {
-            max: length_of(size.0, path)?,
+            size: size_of(size.0, path, false)?,
         }),
         TypeDescription::VisibleString(size) => Definition::Leaf(Leaf::VisibleString {
-            max: length_of(size.0, path)?,
+            size: size_of(size.0, path, false)?,
         }),
         TypeDescription::MMSString(size) => Definition::Leaf(Leaf::MmsString {
-            max: length_of(size.0, path)?,
+            size: size_of(size.0, path, false)?,
         }),
         TypeDescription::UtcTime => Definition::Leaf(Leaf::UtcTime),
         TypeDescription::GeneralizedTime => Definition::Leaf(Leaf::GeneralizedTime),
@@ -287,9 +295,18 @@ fn bits_of(value: i64, path: &str, min: u8) -> Result<u8, DefinitionError> {
         .ok_or_else(|| malformed(path, "a size outside its range"))
 }
 
-/// A maximum length: a negative length is malformed.
-fn length_of(value: i64, path: &str) -> Result<u32, DefinitionError> {
-    u32::try_from(value).map_err(|_| malformed(path, "a negative length"))
+/// A size of a string: a negative value is a variable length of at most its absolute value. A zero size is
+/// malformed for a bit string (§8.1.2.1 of IEC 61850-8-1: no zero-length bit string); a string may have a zero maximum.
+fn size_of(value: i64, path: &str, bit_string: bool) -> Result<Size, DefinitionError> {
+    let length = u32::try_from(value.unsigned_abs())
+        .map_err(|_| malformed(path, "a size outside its range"))?;
+    if length == 0 && bit_string {
+        return Err(malformed(path, "a bit string of no bit"));
+    }
+    Ok(Size {
+        length,
+        variable: value < 0,
+    })
 }
 
 /// One functional constraint of a logical node, with the data objects that have attributes of it.
@@ -352,47 +369,77 @@ pub fn logical_nodes(named_variables: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Why a page of names does not continue the listing.
+/// The most names a listing keeps. A server that goes on past it is refused: the bound is the RUN-001 limit of the
+/// model, far above the size of the demonstration models.
+pub const MAX_LISTED_NAMES: usize = 100_000;
+
+/// Why a listing is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PagingError {
-    /// A name is not after the one before it: the listing is not in the order of the server, or a name repeats.
-    OutOfOrder {
-        /// The name that is out of order.
+    /// A name has already been listed: the server repeats a name over its pages.
+    Repeated {
+        /// The name that repeats.
         name: String,
     },
     /// The server says that more names follow, and gives none: the listing would never end.
     Stalled,
+    /// The listing is longer than [`MAX_LISTED_NAMES`].
+    TooLong,
 }
 
 impl fmt::Display for PagingError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::OutOfOrder { name } => write!(f, "the listing repeats or misorders {name}"),
+            Self::Repeated { name } => write!(f, "the listing repeats {name}"),
             Self::Stalled => write!(f, "the listing says that more names follow, and gives none"),
+            Self::TooLong => write!(f, "the listing is longer than {MAX_LISTED_NAMES} names"),
         }
     }
 }
 
 impl std::error::Error for PagingError {}
 
-/// Checks a page of a GetNameList listing, continued after `after` (the last name of the previous page): each name
-/// must be after the one before it, so that no name repeats and none is skipped by the order of the listing. A page
-/// that is empty while more names follow is refused as stalled.
-pub fn check_page(
-    after: Option<&str>,
-    page: &[String],
-    more_follows: bool,
-) -> Result<(), PagingError> {
-    if page.is_empty() && more_follows {
-        return Err(PagingError::Stalled);
+/// A listing of names read page by page. The server gives its names in its own order, which MMS does not fix, so a
+/// listing is checked by what it must not do: repeat a name, stall, or go on without end. The next page is asked after
+/// the last name of this one.
+#[derive(Debug, Default)]
+pub struct Listing {
+    names: Vec<String>,
+    seen: BTreeSet<String>,
+}
+
+impl Listing {
+    /// An empty listing.
+    pub fn new() -> Self {
+        Self::default()
     }
-    let mut previous = after;
-    for name in page {
-        if previous.is_some_and(|previous| name.as_str() <= previous) {
-            return Err(PagingError::OutOfOrder { name: name.clone() });
+
+    /// The last name listed, which the next page continues after.
+    pub fn last(&self) -> Option<&str> {
+        self.names.last().map(String::as_str)
+    }
+
+    /// Adds a page. `more_follows` is what the server answered with it. A name that is already listed is refused, and
+    /// so is a page that is empty while more names follow.
+    pub fn add_page(&mut self, page: &[String], more_follows: bool) -> Result<(), PagingError> {
+        if page.is_empty() && more_follows {
+            return Err(PagingError::Stalled);
         }
-        previous = Some(name.as_str());
+        for name in page {
+            if !self.seen.insert(name.clone()) {
+                return Err(PagingError::Repeated { name: name.clone() });
+            }
+            if self.names.len() >= MAX_LISTED_NAMES {
+                return Err(PagingError::TooLong);
+            }
+            self.names.push(name.clone());
+        }
+        Ok(())
     }
-    Ok(())
+
+    /// The names listed, in the order of the server.
+    pub fn into_names(self) -> Vec<String> {
+        self.names
+    }
 }

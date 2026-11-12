@@ -50,6 +50,44 @@ services:
     volumes:
       - ./captures:/captures
 
+  # The reverse rows (task A7): our server, and the reference clients and a capture in its network namespace. Started
+  # with the profile `ours` only, so that the rows of the reference servers are unaffected.
+  our-server:
+    profiles: ["ours"]
+    build:
+      context: ./ours
+    image: localhost/igs61850-ours:latest
+    command: ["igs61850-server", "--listen", "0.0.0.0:102"]
+    networks:
+      bench:
+        ipv4_address: 172.31.103.30
+
+  ref-client-ours:
+    <<: *peer
+    profiles: ["ours"]
+    network_mode: "service:our-server"
+    command: ["sleep", "infinity"]
+    depends_on:
+      - our-server
+
+  ours-capture:
+    profiles: ["ours"]
+    image: docker.io/nicolaka/netshoot@sha256:a20c2531bf35436ed3766cd6cfe89d352b050ccc4d7005ce6400adf97503da1b
+    network_mode: "service:our-server"
+    depends_on:
+      - our-server
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      BENCH_CAPTURE: ${BENCH_CAPTURE:-bench.pcap}
+    command:
+      - sh
+      - -c
+      - tcpdump -i any -U --immediate-mode -Z root -w "/captures/$$BENCH_CAPTURE" tcp port 102 & exec sleep infinity
+    volumes:
+      - ./captures:/captures
+
 networks:
   bench:
     ipam:
