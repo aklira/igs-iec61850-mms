@@ -21,6 +21,7 @@
 )]
 
 pub mod model;
+pub mod reports;
 
 pub mod clock;
 pub mod updates;

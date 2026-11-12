@@ -573,6 +573,40 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the transitions and the reservation rules (figures and clauses read); medium for the strict flush of a
   repeated status notification and the re-arm rule of the integrity timer, which are readings to confront with a reference client.
 
+### D-025 — The layout and the delivery of the unbuffered reports (task D4; RPT-002, RPT-003)
+
+- **Layout** (8-1 §17.2.1, table 74): one `InformationReport` on the VMD-specific list `RPT`, whose results are, in order: `RptID`, the
+  reported options, the sequence number (INT8U), the time of entry (binary time, six octets: the milliseconds of the day, then the days
+  since 1 January 1984), the data set name, the configuration revision, the inclusion bit string, the data references, the values, and the
+  reasons for inclusion. The reported options and the reasons take their bits from tables 41 and 38 (data-change 1 … general-interrogation
+  5); the options are at least ten bits, the reasons at least six. The buffer-overflow, entry identifier and segmentation options are never
+  reported (8-1 17.1.3 and 17.2.5.2). An empty `RptID` is replaced by the block reference, `LD/LN.name` (7-2 17.2.4.3).
+- **Inclusion**: one bit per variable of the data set (the NamedVariableList members, 8-1 17.2.1), not per FCDA. A member that selects a
+  data object selects several variables, and an entry of the report includes all of them. The data-reference of a variable is `LD/LN.DO.DA`
+  (the constraint is left out).
+- **Triggers**: the trigger flags of a data attribute come from its common data class in the catalogue (dchg, qchg, dupd). A change of the
+  value raises the data-change or the quality-change of the attribute; any update raises the data-update. One notice carries one trigger:
+  data-change, then quality-change, then data-update (7-2 NOTE 3 prefers a single report).
+- **Owner and delivery** (RPT-003): a report is queued for the association that reserved the block and enabled it, and for no other. The
+  queue is the observable delivery of N5: a saturated or closed association is a refusal of the delivery, seen by the application through
+  `Server::next_delivery`. The release of an association (`Model::released`) releases its reservation and disables its block (D3).
+- **Clock and polling**: the blocks keep their time from the creation of the served model; the requests and the timers use that clock. The
+  server polls the model at its tick: the notices, the expired timers and the outbound reports are handled there.
+- **Bounds** (RUN-001): the notices are kept up to 65 536; beyond that, the oldest is dropped and counted, and `Reports::dropped_notices`
+  gives the count. A dropped notice is never silent.
+- **Not in D4**: the MMS attributes of the blocks (`RptEna`, `Resv`, `DatSet`… written and read through the services), and the client API:
+  these are task D5, so the application drives a block through `Reports::request`. The blocks named with an index (`indexed="true"`) keep
+  their name as written. A value written by an MMS client raises no notice: only the application's updates do (a gap to close with D5).
+  Buffered blocks (B tasks) are refused as SCOPE-002.
+- **Test**: `igs-iec61850-mms-core/tests/report_encode.rs` (8 vectors: the options bits, the order of table 74, the inclusion bits, the
+  integrity report, the reason bits, the binary time, the object reference, the empty identifier); `igs-iec61850-mms/tests/reports.rs`
+  (5 tests on the served sample: the owner receives the report of a change and no other association; a change that changes nothing reports
+  nothing; a change outside the data set reports nothing; a disabled block reports nothing and refusals are explicit; the close of the owner
+  releases and disables the block). The saturation diagnostic is N5's (AT-06): it is not re-tested here, since it depends on the timing of the
+  server's tick.
+- **Confidence**: high for the layout (vectors from the tables); medium for the choice of one trigger per notice and for the reading of the
+  dupd trigger, which the attributes of the catalogue give; to be confronted with a reference client in D6.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

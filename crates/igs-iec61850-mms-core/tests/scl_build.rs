@@ -98,16 +98,70 @@ fn a_declared_service_the_server_does_not_execute_is_refused() {
 }
 
 #[test]
-fn a_declared_report_control_is_refused_because_it_would_be_lost() {
+fn a_declared_buffered_report_control_is_refused_because_it_would_be_lost() {
     let text = mutate(
         "            </DataSet>\n          </LN0>",
-        "            </DataSet>\n            <ReportControl name=\"RC1\" datSet=\"DS1\" rptID=\"r\" confRev=\"1\" buffered=\"false\">\n              <OptFields seqNum=\"true\" timeStamp=\"true\" reasonCode=\"true\"/>\n            </ReportControl>\n          </LN0>",
+        "            </DataSet>\n            <ReportControl name=\"RC1\" datSet=\"DS1\" rptID=\"r\" confRev=\"1\" buffered=\"true\">\n              <OptFields seqNum=\"true\" timeStamp=\"true\" reasonCode=\"true\"/>\n            </ReportControl>\n          </LN0>",
     );
     refused_with(
         build_text(&text),
         "SCOPE-002",
-        "the declared ReportControl RC1 is not built",
+        "the declared ReportControl RC1 is a buffered report control block",
     );
+}
+
+#[test]
+fn an_unbuffered_report_control_is_declared_with_its_options_triggers_and_data_set() {
+    let text = mutate(
+        "            </DataSet>\n          </LN0>",
+        "            </DataSet>\n            <ReportControl name=\"RPT1\" datSet=\"DS1\" rptID=\"RPT1\" confRev=\"4\" bufTime=\"200\" intgPd=\"5000\" buffered=\"false\">\n              <TrgOps dchg=\"true\" qchg=\"true\" period=\"true\" gi=\"true\"/>\n              <OptFields seqNum=\"true\" timeStamp=\"false\" reasonCode=\"true\" dataSet=\"true\" dataRef=\"false\" configRef=\"true\"/>\n            </ReportControl>\n          </LN0>",
+    );
+    let configuration = build_text(&text).expect("the document builds");
+    assert_eq!(configuration.reports.len(), 1);
+    let report = &configuration.reports[0];
+    assert_eq!(
+        (
+            report.device.as_str(),
+            report.node.as_str(),
+            report.name.as_str()
+        ),
+        ("LD1", "LLN0", "RPT1")
+    );
+    let config = &report.config;
+    assert_eq!(config.rpt_id, "RPT1");
+    assert_eq!(config.data_set.as_deref(), Some("DS1"));
+    assert_eq!(config.conf_rev, 4);
+    assert_eq!(config.buf_tm, std::time::Duration::from_millis(200));
+    assert_eq!(config.intg_pd, std::time::Duration::from_millis(5000));
+    assert!(
+        config.trg_ops.data_change
+            && config.trg_ops.quality_change
+            && config.trg_ops.integrity
+            && config.trg_ops.general_interrogation
+    );
+    assert!(!config.trg_ops.data_update);
+    assert!(
+        config.opt_flds.seq_num
+            && config.opt_flds.reason_code
+            && config.opt_flds.data_set_name
+            && config.opt_flds.conf_rev
+    );
+    assert!(!config.opt_flds.time_stamp && !config.opt_flds.data_ref);
+}
+
+#[test]
+fn a_variable_of_a_data_set_knows_its_member_and_the_triggers_of_its_attribute() {
+    let configuration = build_text(SAMPLE).expect("the sample builds");
+    let variables = &configuration.data_sets[0].variables;
+    // Mod.stVal is a status attribute of the controllable object: dchg; GGIO1 Ind1.stVal of SPS: dchg.
+    assert_eq!(variables[0].member, 0);
+    assert_eq!(variables[1].member, 1);
+    assert!(
+        variables[1].triggers.data_change,
+        "{:?}",
+        variables[1].triggers
+    );
+    assert!(!variables[1].triggers.quality_change);
 }
 
 #[test]

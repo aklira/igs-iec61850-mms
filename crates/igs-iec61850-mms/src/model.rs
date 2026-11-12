@@ -12,15 +12,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use igs_iec61850_mms_core::model::layout::{
     defines_enumerations, layout, set_at, value_at, DefinedValues, IDENTIFIER_LIMIT,
 };
 use igs_iec61850_mms_core::model::{ModelError, ServerModel};
 
+#[cfg(feature = "scl")]
+use crate::reports::{Block, Wire};
+use crate::reports::{ReportState, Reports};
 use crate::updates::{Point, Updater};
 use igs_iso9506_mms::client::{in_scope_capabilities, ClientConfig};
-use igs_iso9506_mms::server::{Model, Peer};
+use igs_iso9506_mms::server::{Model, Outbound, Peer};
 use igs_iso9506_mms::vmd::{Error as VmdError, Identity, NameError, Target, Variable, Vmd};
 use igs_iso9506_mms::ServerConfig;
 use igs_iso9506_mms_codec::generated::types::{
@@ -76,6 +80,8 @@ pub enum ServeError {
     Name(NameError),
     /// The VMD refused an object (a duplicate, a missing domain).
     Vmd(VmdError),
+    /// A report of the configuration refers to a variable that is not served, or to a data set that is not in the configuration.
+    Report(String),
 }
 
 impl fmt::Display for ServeError {
@@ -84,6 +90,10 @@ impl fmt::Display for ServeError {
             Self::Model(error) => write!(f, "the model is not valid: {error}"),
             Self::Name(error) => write!(f, "a name cannot be served: {error}"),
             Self::Vmd(_) => write!(f, "the VMD refused an object of the model"),
+            Self::Report(name) => write!(
+                f,
+                "a report refers to {name}, which the model does not serve"
+            ),
         }
     }
 }
@@ -222,6 +232,8 @@ pub fn serve(server: &ServerModel, identity: Identity) -> Result<Served, ServeEr
 pub struct ServedModel {
     vmd: Vmd,
     updater: Updater,
+    /// The unbuffered blocks of the reports, shared with the application's handle.
+    reports: Arc<Mutex<ReportState>>,
     /// The static data sets, as (device, name): the named variable lists of the configuration, which no client deletes.
     static_lists: BTreeSet<(String, String)>,
 }
@@ -233,6 +245,7 @@ impl ServedModel {
         Ok(Self {
             vmd: served.vmd,
             updater: served.updater,
+            reports: Arc::new(Mutex::new(ReportState::new())),
             static_lists: BTreeSet::new(),
         })
     }
@@ -259,9 +272,41 @@ impl ServedModel {
             vmd.define_list(&Target::in_domain(domain, list), members)?;
             static_lists.insert((set.device.clone(), set.name.clone()));
         }
+        let mut state = ReportState::new();
+        for declared in &configuration.reports {
+            let set = configuration
+                .data_sets
+                .iter()
+                .find(|set| {
+                    set.device == declared.device
+                        && set.node == declared.node
+                        && Some(set.name.as_str()) == declared.config.data_set.as_deref()
+                })
+                .ok_or_else(|| ServeError::Report(declared.name.clone()))?;
+            let mut wires = Vec::with_capacity(set.variables.len());
+            for variable in &set.variables {
+                let wire = Wire::new(
+                    &updater,
+                    &variable.device,
+                    &variable.name,
+                    variable.member,
+                    variable.triggers,
+                )
+                .ok_or_else(|| ServeError::Report(variable.name.clone()))?;
+                wires.push(wire);
+            }
+            let node = format!("{}/{}", declared.device, declared.node);
+            state.add_block(Block::new(
+                &declared.name,
+                &node,
+                declared.config.clone(),
+                wires,
+            ));
+        }
         Ok(Self {
             vmd,
             updater,
+            reports: Arc::new(Mutex::new(state)),
             static_lists,
         })
     }
@@ -307,7 +352,35 @@ impl ServedModel {
     }
 }
 
+impl ServedModel {
+    /// The handle of the reports of the model: the application writes to the unbuffered blocks through it (task D4).
+    pub fn reports(&self) -> Reports {
+        Reports::new(Arc::clone(&self.reports))
+    }
+}
+
 impl Model for ServedModel {
+    fn admit(&mut self, peer: &Peer) -> bool {
+        if let Ok(mut state) = self.reports.lock() {
+            state.admitted(peer.id);
+        }
+        true
+    }
+
+    fn released(&mut self, peer: &Peer) {
+        if let Ok(mut state) = self.reports.lock() {
+            state.released(peer.id);
+        }
+    }
+
+    fn poll(&mut self, _now: Duration) -> Vec<Outbound> {
+        let (notices, dropped) = self.updater.take_notices();
+        match self.reports.lock() {
+            Ok(mut state) => state.poll(notices, dropped),
+            Err(_) => Vec::new(),
+        }
+    }
+
     fn dispatch(
         &mut self,
         peer: &Peer,

@@ -24,11 +24,11 @@
 //! - **Non-blocking**: the lock is held for a copy and a store of the node's value. No I/O and no wait for an association
 //!   happens under it, so an application task never waits for the network.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use igs_iec61850_mms_core::model::layout::{defines_enumerations, set_at, DefinedValues};
+use igs_iec61850_mms_core::model::layout::{defines_enumerations, set_at, value_at, DefinedValues};
 use igs_iso9506_mms::vmd::conforms;
 use igs_iso9506_mms_codec::generated::types::{Data, TypeDescription};
 
@@ -112,16 +112,55 @@ pub(crate) struct Point {
     pub(crate) enumerations: Vec<DefinedValues>,
 }
 
+/// The most notices kept for the reports before the oldest are dropped (RUN-001). A dropped notice is counted: it is never
+/// silent.
+pub(crate) const NOTICE_LIMIT: usize = 65_536;
+
+/// A change applied by an update: the served name of the attribute (`domain/item`), and whether its value changed (the
+/// data-change and quality-change triggers need a change; the data-update trigger needs only the update).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Notice {
+    pub(crate) name: String,
+    pub(crate) changed: bool,
+}
+
+/// The notices of the updates, for the reports, with the number of those dropped at the limit.
+#[derive(Default)]
+pub(crate) struct Notices {
+    pub(crate) queue: VecDeque<Notice>,
+    pub(crate) dropped: u64,
+}
+
 /// The application's handle to the values of the served model. Cheap to clone; safe to use from other tasks.
 #[derive(Clone)]
 pub struct Updater {
     points: Arc<BTreeMap<String, Point>>,
+    notices: Arc<Mutex<Notices>>,
 }
 
 impl Updater {
     pub(crate) fn new(points: BTreeMap<String, Point>) -> Self {
         Self {
             points: Arc::new(points),
+            notices: Arc::new(Mutex::new(Notices::default())),
+        }
+    }
+
+    /// The node's value and the path of a served attribute, for the reports (task D4).
+    pub(crate) fn point(&self, name: &str) -> Option<(Arc<Mutex<NodeValue>>, Vec<usize>)> {
+        self.points
+            .get(name)
+            .map(|point| (Arc::clone(&point.root), point.path.clone()))
+    }
+
+    /// Takes the notices of the updates made since the last call, with the number dropped at the limit.
+    pub(crate) fn take_notices(&self) -> (Vec<Notice>, u64) {
+        match self.notices.lock() {
+            Ok(mut notices) => {
+                let dropped = std::mem::take(&mut notices.dropped);
+                (notices.queue.drain(..).collect(), dropped)
+            }
+            Err(_) => (Vec::new(), 0),
         }
     }
 
@@ -157,13 +196,33 @@ impl Updater {
         };
         let mut state = root.lock().map_err(|_| UpdateError::Poisoned)?;
         let mut next = state.data.clone();
+        let mut notices = Vec::with_capacity(checked.len());
         for (change, point) in &checked {
+            let before = value_at(&next, &point.path).cloned();
             if !set_at(&mut next, &point.path, change.value.clone()) {
                 return Err(UpdateError::UnknownName(change.name.clone()));
             }
+            notices.push(Notice {
+                name: change.name.clone(),
+                changed: before.as_ref() != Some(&change.value),
+            });
         }
         state.data = next;
         state.revision = state.revision.saturating_add(1);
+        self.notify(notices);
         Ok(Revision(state.revision))
+    }
+
+    /// Queues the notices of an applied update, dropping the oldest beyond the limit and counting them.
+    fn notify(&self, notices: Vec<Notice>) {
+        if let Ok(mut queue) = self.notices.lock() {
+            for notice in notices {
+                if queue.queue.len() >= NOTICE_LIMIT {
+                    queue.queue.pop_front();
+                    queue.dropped = queue.dropped.saturating_add(1);
+                }
+                queue.queue.push_back(notice);
+            }
+        }
     }
 }

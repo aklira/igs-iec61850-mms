@@ -14,9 +14,12 @@
 //! resolve, and the build reports only what the validation does not cover.
 
 use std::collections::{BTreeSet, HashMap};
+use std::time::Duration;
 
+use crate::catalogue;
 use crate::model::layout::{layout, IDENTIFIER_LIMIT};
 use crate::model::{DataObjectSpec, LogicalDevice, LogicalNode, Node, ServerModel};
+use crate::report::urcb::{Config, OptionalFields, TriggerOptions};
 
 use super::validate::{segment, Diagnostic, Templates};
 use super::{Document, Element};
@@ -34,7 +37,12 @@ impl Capabilities {
     /// What this build executes: the directory and the definitions, and the reads and writes of the model. Data sets
     /// are declared in the configuration but not yet served; reports, logs, controls and setting groups are not executed.
     pub fn current() -> Self {
-        Self::from_names(["GetDirectory", "GetDataObjectDefinition", "ReadWrite"])
+        Self::from_names([
+            "GetDirectory",
+            "GetDataObjectDefinition",
+            "ReadWrite",
+            "ReportControl",
+        ])
     }
 
     /// The capabilities with exactly these names, the names of the SCL elements (`ReadWrite`, `ReportControl`…).
@@ -87,6 +95,10 @@ pub struct VariableRef {
     pub device: String,
     /// The name of the variable within the device.
     pub name: String,
+    /// The index of the member of the data set (the FCDA) that selected the variable.
+    pub member: usize,
+    /// The trigger options of the data attribute of the variable (dchg, qchg, dupd, from the common data class).
+    pub triggers: TriggerOptions,
 }
 
 /// A data set of the IED: the logical node that holds it, its name, its members in document order, and the variables
@@ -113,7 +125,20 @@ struct Pending {
     line: u32,
 }
 
-/// The configuration of one IED: its model, its data sets, and its address parameters.
+/// An unbuffered report control block of the IED: its logical device and node, its name, and its configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportDecl {
+    /// The logical device of the block.
+    pub device: String,
+    /// The logical node of the block.
+    pub node: String,
+    /// The name of the block, as the SCL gives it (indexed blocks are not numbered in this release).
+    pub name: String,
+    /// The configuration of the block, as the report state machine takes it.
+    pub config: Config,
+}
+
+/// The configuration of one IED: its model, its data sets, its report control blocks, and its address parameters.
 #[derive(Debug)]
 pub struct Configuration {
     /// The name of the IED the configuration was built for.
@@ -122,6 +147,8 @@ pub struct Configuration {
     pub model: ServerModel,
     /// The data sets, in document order.
     pub data_sets: Vec<DataSet>,
+    /// The unbuffered report control blocks, in document order.
+    pub reports: Vec<ReportDecl>,
     /// The address parameters of the connections of the IED.
     pub addresses: Vec<Address>,
 }
@@ -140,6 +167,7 @@ pub fn build(
         capabilities,
         diagnostics: Vec::new(),
         pending: Vec::new(),
+        reports: Vec::new(),
     };
     let Some(ied_element) = root
         .children
@@ -213,11 +241,13 @@ pub fn build(
     }
     let addresses = builder.addresses(root, ied);
     let data_sets = builder.resolve_data_sets(&model);
+    let reports = std::mem::take(&mut builder.reports);
     builder.finish()?;
     Ok(Configuration {
         ied: ied.to_string(),
         model,
         data_sets,
+        reports,
         addresses,
     })
 }
@@ -227,6 +257,7 @@ struct Builder<'a> {
     capabilities: &'a Capabilities,
     diagnostics: Vec<Diagnostic>,
     pending: Vec<Pending>,
+    reports: Vec<ReportDecl>,
 }
 
 impl Builder<'_> {
@@ -258,14 +289,14 @@ impl Builder<'_> {
     /// (SCL-003), and the data sets are returned only when every member resolves.
     fn resolve_data_sets(&mut self, model: &ServerModel) -> Vec<DataSet> {
         let mut names: HashMap<(String, String), Vec<String>> = HashMap::new();
+        let mut classes: HashMap<(String, String), String> = HashMap::new();
         for device in model.devices() {
             for node in device.nodes() {
                 if let Ok(node_layout) = layout(node, IDENTIFIER_LIMIT) {
                     let variables = node_layout.variables.into_iter().map(|v| v.name).collect();
-                    names.insert(
-                        (device.name().to_string(), node.name().to_string()),
-                        variables,
-                    );
+                    let key = (device.name().to_string(), node.name().to_string());
+                    classes.insert(key.clone(), node.class().name.to_string());
+                    names.insert(key, variables);
                 }
             }
         }
@@ -273,12 +304,14 @@ impl Builder<'_> {
         for pending in std::mem::take(&mut self.pending) {
             let mut set = pending.set;
             let mut variables = Vec::new();
-            for member in &set.members {
+            for (index, member) in set.members.iter().enumerate() {
                 let prefix = member_prefix(member);
+                let key = (member.device.clone(), member.node.clone());
                 let found: Vec<String> = names
-                    .get(&(member.device.clone(), member.node.clone()))
+                    .get(&key)
                     .map(|candidates| select(candidates, &prefix, member.data_attribute.is_some()))
                     .unwrap_or_default();
+                let class = classes.get(&key).cloned().unwrap_or_default();
                 if found.is_empty() {
                     self.diagnostics.push(Diagnostic {
                         code: "SCL-003",
@@ -293,6 +326,8 @@ impl Builder<'_> {
                 }
                 variables.extend(found.into_iter().map(|name| VariableRef {
                     device: member.device.clone(),
+                    member: index,
+                    triggers: attribute_triggers(&class, &name),
                     name,
                 }));
             }
@@ -432,7 +467,7 @@ impl Builder<'_> {
         };
         self.members(ln_type, &logical, path, templates);
         self.data_sets(node, path, device_inst, &name);
-        self.declared_blocks(node, path);
+        self.declared_blocks(node, path, device_inst, &name);
         Some(logical)
     }
 
@@ -615,9 +650,9 @@ impl Builder<'_> {
         }
     }
 
-    /// SCOPE-002: the blocks and the input subscriptions the node declares. They are not built by this release, so
-    /// a declared one is refused whatever the capabilities say: a block accepted and then not built would be lost.
-    fn declared_blocks(&mut self, node: &Element, path: &str) {
+    /// The report control blocks of the node: an unbuffered one that the server executes is declared in the configuration;
+    /// a buffered one, or a block of another kind, is refused (SCOPE-002), since this release does not build it.
+    fn declared_blocks(&mut self, node: &Element, path: &str, device_inst: &str, node_name: &str) {
         for block in node.children.iter().filter(|child| {
             matches!(
                 child.name.as_str(),
@@ -631,17 +666,127 @@ impl Builder<'_> {
             )
         }) {
             let name = block.attribute("name").unwrap_or_default();
+            let block_path = segment(path, block);
+            let buffered = flag(Some(block), "buffered");
+            if block.name == "ReportControl"
+                && !buffered
+                && self.capabilities.executes("ReportControl")
+            {
+                self.reports.push(ReportDecl {
+                    device: device_inst.to_string(),
+                    node: node_name.to_string(),
+                    name: name.to_string(),
+                    config: report_config(node, block),
+                });
+                continue;
+            }
+            let reason = if buffered {
+                "a buffered report control block is not built by this release"
+            } else {
+                "not built by this release"
+            };
             self.report(
                 "SCOPE-002",
                 block,
-                &segment(path, block),
+                &block_path,
                 format!(
-                    "the declared {} {name} is not built by this release, so it would be lost",
+                    "the declared {} {name} is {reason}, so it would be lost",
                     block.name
                 ),
             );
         }
     }
+}
+
+/// The configuration of an unbuffered report control block, from its element and the data sets of its node.
+fn report_config(node: &Element, block: &Element) -> Config {
+    let data_sets = node
+        .children
+        .iter()
+        .filter(|child| child.name == "DataSet")
+        .filter_map(|set| {
+            let members = set.children.iter().filter(|c| c.name == "FCDA").count();
+            set.attribute("name")
+                .map(|name| (name.to_string(), members))
+        })
+        .collect();
+    let options = block.children.iter().find(|c| c.name == "OptFields");
+    let triggers = block.children.iter().find(|c| c.name == "TrgOps");
+    Config {
+        rpt_id: block.attribute("rptID").unwrap_or_default().to_string(),
+        data_set: block.attribute("datSet").map(str::to_string),
+        data_sets,
+        opt_flds: OptionalFields {
+            seq_num: flag(options, "seqNum"),
+            time_stamp: flag(options, "timeStamp"),
+            reason_code: flag(options, "reasonCode"),
+            data_set_name: flag(options, "dataSet"),
+            data_ref: flag(options, "dataRef"),
+            conf_rev: flag(options, "configRef"),
+        },
+        buf_tm: millis(block, "bufTime"),
+        intg_pd: millis(block, "intgPd"),
+        trg_ops: TriggerOptions {
+            data_change: flag(triggers, "dchg"),
+            quality_change: flag(triggers, "qchg"),
+            data_update: flag(triggers, "dupd"),
+            integrity: flag(triggers, "period"),
+            general_interrogation: flag(triggers, "gi"),
+        },
+        conf_rev: block
+            .attribute("confRev")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0),
+    }
+}
+
+/// Whether an optional attribute of an element is set (`true` or `1`).
+fn flag(element: Option<&Element>, name: &str) -> bool {
+    element
+        .and_then(|element| element.attribute(name))
+        .is_some_and(|value| value == "true" || value == "1")
+}
+
+/// The number of milliseconds of an optional attribute (zero when absent).
+fn millis(element: &Element, name: &str) -> Duration {
+    Duration::from_millis(
+        element
+            .attribute(name)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0),
+    )
+}
+
+/// The trigger options of the data attribute that a variable of the model reads, from its common data class: a variable
+/// is `LN$FC$DO$DA…`. Nothing is set when the class or the attribute is not in the catalogue.
+fn attribute_triggers(class: &str, variable: &str) -> TriggerOptions {
+    let parts: Vec<&str> = variable.split('$').collect();
+    let (Some(object), Some(attribute)) = (parts.get(2), parts.get(3)) else {
+        return TriggerOptions::default();
+    };
+    let Some(ln) = catalogue::ln_class(class) else {
+        return TriggerOptions::default();
+    };
+    let Some(data_object) = ln
+        .all_data_objects()
+        .into_iter()
+        .find(|candidate| crate::model::instance_of(object, candidate))
+    else {
+        return TriggerOptions::default();
+    };
+    let Some(cdc) = catalogue::cdc(data_object.cdc, None) else {
+        return TriggerOptions::default();
+    };
+    cdc.data_attributes
+        .iter()
+        .find(|candidate| candidate.name == *attribute)
+        .map(|candidate| TriggerOptions {
+            data_change: candidate.dchg,
+            quality_change: candidate.qchg,
+            data_update: candidate.dupd,
+            ..Default::default()
+        })
+        .unwrap_or_default()
 }
 
 /// The variables a member selects among the variables of its node. With a data attribute, the variable of that
