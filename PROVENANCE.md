@@ -813,6 +813,20 @@ silent, to be confirmed by an observation test against other implementations.
   operate to `Unknown` (the downstream refusal cause is not forwarded in this release: a refusal of the downstream operate is reported as unknown).
   The example with the peer's servers downstream (AT-16 with the reference) is not run here.
 
+### D-034 — The capability statements: a checked source and the generated matrix (task V1; SCOPE-001, AT-14)
+
+- **Source**: `docs/capabilities.tsv`, one row per item: requirement, area, item, state, and the tests that cover it (`path::function`, comma
+  separated). A row without a test is a declared gap (BRCB-001, SEC-001 have none). The checker refuses a row without five columns, a test without a
+  function, and a test whose file is missing or does not define the function.
+- **Output**: `cargo xtask statements` writes `docs/statements.md` (by area, with the tests); `--check` only verifies (AT-14). The plan names
+  `docs/capabilities.md` for this output, but that file is the hand-written register of the gaps and their decisions (committed with the server and
+  time tasks). It is kept as it is: the generated rows are to be merged into it when the PICS, MICS and PIXIT drafts are written.
+- **Not produced in this release**: the PICS, MICS and PIXIT drafts of V1. They are written from the rows in English, as a later step; the PIXIT
+  values come from the implementer's configuration and are not invented here. The tables of the standard are not copied (licensed text).
+- **Confidence**: medium on the choice of a tab-separated source over the layout of the standard's conformance tables; high on the checker.
+- **Tests**: `xtask/src/statements.rs`: six tests (the parsing, the five columns, the empty function, a gap in the rendering, and the repository
+  source: every test named there exists).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

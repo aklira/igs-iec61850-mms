@@ -14,6 +14,7 @@
 use std::process::ExitCode;
 
 mod catalogue;
+mod statements;
 
 const USAGE: &str = "usage: cargo xtask <catalogue | statements> [--check]";
 
@@ -30,15 +31,19 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Some("statements") => not_yet("statements", "V1"),
+        Some("statements") => {
+            let check = std::env::args().nth(2).as_deref() == Some("--check");
+            match statements::run(&catalogue::workspace_root(), check) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("cargo xtask statements: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         _ => {
             eprintln!("{USAGE}");
             ExitCode::from(2)
         }
     }
-}
-
-fn not_yet(command: &str, task: &str) -> ExitCode {
-    eprintln!("cargo xtask {command}: not implemented yet (task {task} of IMPLEMENTATION.md)");
-    ExitCode::FAILURE
 }
