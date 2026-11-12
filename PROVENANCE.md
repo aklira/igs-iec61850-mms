@@ -71,6 +71,36 @@ silent, to be confirmed by an observation test against other implementations.
   standards in `tests/catalogue.rs`); medium for the defaults until the model tasks use them.
 - **Test**: `crates/igs-iec61850-mms-core/tests/catalogue.rs`; `cargo xtask catalogue --check`.
 
+### D-003 — Names and object references: three limits, three forms (task A1)
+
+- **Decision**: `names` holds the names and their MMS addresses; `reference` holds the object references and their
+  three forms.
+  - **Names**: an IEC 61850 name (`Name`) is an ObjectName of 1 to 64 characters, starting with a letter, then
+    letters, digits and underscores. An MMS identifier (`MmsIdentifier`) is 1 to 64 characters of letters, digits,
+    `$` and `_`, starting with a letter. A scope-qualified MMS name (`MmsName`) is `domain/item`, `/item` or `@item`,
+    and a reference is at most 129 octets. The three limits are kept apart, as MMS-001 asks; the string values of the
+    application have their own limit, in the data model (A2).
+  - **Forms**: the ACSI reference `LD/LN.DO.DA(n).SubDA` has no functional constraint; the MMS item
+    `LN$FC$DO$DA` in the domain `LD` has it after the logical node; the data reference of a report or a log
+    `LD/LN$FC$DO$DA(n)` keeps the array elements. `ObjectReference::to_mms` refuses an array element: MMS reaches it by
+    an alternate access. `from_mms` and `parse_data_ref` read the two other forms back.
+  - **Control blocks**: a control block is the object `LN.CBName` of its logical node; its MMS address is
+    `LD/LN$FC$CBName`, with the constraint of the block (`RP`, `BR`, and so on).
+  - **Functional constraints**: the two-letter codes of 7-2 and of the figure of 8-1 (`ST` to `RS`), with `XX`
+    refused: it is for services only, and 8-1 does not map it. The list is checked against the generated catalogue.
+- **Sources**: IEC 61850-7-2 §6.2.3.3 (ObjectName), §6.2.3.4 (ObjectReference, 129 octets); IEC 61850-8-1 §7.3.1 to
+  §7.3.4 (the scopes, the flattened names, the alternate access for arrays), §8.1.3.2.2 to §8.1.3.2.4 (the forms of
+  the references), Annex F.3.2 (identifiers of 64), §24.2.2.2.1 (BasicIdentifier), Figure 4 and its NOTE 2
+  (constraints).
+- **Confidence**: high for the examples of §7.3.3, §7.3.4 and §8.1.3.2.4, which are tests; high for the limits;
+  medium for the reading of the list of constraints of 8-1 Figure 4 as the names an ACSI reference may take, since the
+  catalogue (NSD) lists only the 7-2 constraints and CO.
+- **Test**: unit tests in `names.rs` and `reference.rs` (limits, syntax, the examples, the scopes); property tests in
+  `tests/references.rs` (round trips of references, items and data references, the MMS names, the refusals of a
+  name longer than 64 or with a foreign character); a cross-check of the constraints with the catalogue.
+- **Licence**: `proptest` (MIT or Apache-2.0) is a development dependency of `igs-iec61850-mms-core` only; it is not
+  published with the library.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
@@ -80,3 +110,4 @@ silent, to be confirmed by an observation test against other implementations.
 | IEC code components (NSD 2007B6, SNSD 2003A4) | IEC Code Components EULA | Generated catalogue (task F3) | See NOTICE and D-002; files not in this repository |
 | libiec61850 | GPL-3.0 | Reference peer of the bench, tag `v1.6.2.1`, commit `c28c27c`, black box only; image built locally, not distributed | Source never read; user documentation only |
 | Wireshark (tshark) in `nicolaka/netshoot` | GPL-2.0 | Independent decoder of the bench captures | Run as a tool, not linked |
+| proptest 1 | MIT OR Apache-2.0 | Development dependency of the core crate: property tests of the names and references (task A1) | Not published with the library |

@@ -22,3 +22,6 @@
 )]
 
 pub mod catalogue;
+
+pub mod names;
+pub mod reference;

@@ -15,3 +15,8 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+
+[dev-dependencies]
+# proptest: the property tests of the names and the references (task A1), as in the MMS codec (MIT or Apache-2.0).
+proptest = { version = "1", default-features = false, features = ["std"] }
+
