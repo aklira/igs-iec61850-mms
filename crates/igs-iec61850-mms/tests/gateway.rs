@@ -181,3 +181,79 @@ async fn a_change_downstream_reaches_the_upstream_model_and_the_upstream_client_
     down1.shutdown().await;
     down2.shutdown().await;
 }
+
+#[tokio::test]
+async fn a_lost_downstream_association_makes_the_mirrored_quality_invalid() {
+    use igs_iec61850_mms::gateway::{run_mirror, Mirror};
+    use igs_iec61850_mms_core::acsi::{Quality, Validity};
+
+    let (down, updater1, address1) = downstream("down1").await;
+    let upstream = ServedModel::new(&upstream_model(), identity("up")).expect("served");
+    let upstream_updater = upstream.updater();
+    let up = Server::bind_model(
+        "127.0.0.1:0",
+        server_config(LinkConfig::default()),
+        upstream,
+    )
+    .await
+    .expect("binds");
+    let up_address = up.local_address().to_string();
+
+    let client = connect(&address1).await;
+    let mirror = Mirror {
+        downstream_device: "LD1".to_string(),
+        downstream_variable: "GGIO1$ST$Ind1$stVal".to_string(),
+        upstream_device: "DOWN1".to_string(),
+        upstream_variable: "GGIO1$ST$Ind1$stVal".to_string(),
+    };
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let task = tokio::spawn(run_mirror(
+        client,
+        upstream_updater.clone(),
+        vec![mirror],
+        Duration::from_millis(50),
+        stop_rx,
+    ));
+    updater1
+        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .expect("updated");
+    let upstream_client = connect(&up_address).await;
+    let quality_path = MmsName::new(
+        Scope::Domain(Name::new("DOWN1").expect("device")),
+        MmsIdentifier::new("GGIO1$ST$Ind1$q").expect("name"),
+    );
+    // Good while the downstream answers.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let good = upstream_client
+        .read(std::slice::from_ref(&quality_path))
+        .await
+        .expect("read");
+    assert_eq!(good[0].as_ref().ok(), Some(&Quality::good().to_data()));
+
+    // The downstream server ends: the next step fails, and the mirror reports it.
+    down.shutdown().await;
+    let outcome = tokio::time::timeout(Duration::from_secs(10), task)
+        .await
+        .expect("the mirror ends")
+        .expect("joined");
+    assert!(outcome.is_err(), "the failed step is returned, not hidden");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let invalid = upstream_client
+        .read(std::slice::from_ref(&quality_path))
+        .await
+        .expect("read");
+    let expected = Quality {
+        validity: Validity::Invalid,
+        ..Quality::good()
+    }
+    .to_data();
+    assert_eq!(
+        invalid[0].as_ref().ok(),
+        Some(&expected),
+        "the quality of the lost values is invalid"
+    );
+
+    let _ = stop_tx.send(true);
+    upstream_client.close().await.expect("closed");
+    up.shutdown().await;
+}

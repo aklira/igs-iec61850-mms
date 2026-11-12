@@ -791,6 +791,28 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the composition and the path of the values (the integration test); the example of the requirement with the peer's example
   servers as the downstream is not run here.
 
+### D-033 — The gateway: quality on loss, forwarding of the controls, and the outcome of a forwarded command (task G2; GW-003, GW-004, GW-005)
+
+- **Quality on loss** (GW-003): a step of a mirror that fails (the downstream association is lost, or a read fails) marks the quality of each
+  mirrored status invalid (the `q` of its data object) and returns the error; a step that succeeds sets the quality good again. A stale value is not
+  kept as good. The loop does not reconnect in this release: a restart is the caller's decision.
+- **Forwarding of the controls** (GW-004): the upstream control object is served as any control object (K2), with a handler that forwards the
+  command: `ForwardHandler::execute` sends the operate to the downstream control object (a spawned task, so the model task is not blocked). The
+  upstream operate has been answered positively, as the standard has it; its termination waits for the downstream outcome. `forward_outcomes` reads
+  the downstream events and completes the upstream command through its handle (K3) with the downstream outcome: a positive termination completes it,
+  a negative one terminates it with the downstream cause (its name in the catalogue).
+- **Upstream reports** (GW-005): the reports of the gateway come from its own blocks, since the updater notices every change of the upstream model
+  (D4); a downstream report PDU is not relayed. This follows from the design and is not tested by a separate row in this release.
+- **Proxy LDs** (GW-002): the upstream model is built in code here, and from SCL in the control test; the proxy `LPHD` node of 7-4 is not built.
+  The mapping is explicit (the mirror and the device names).
+- **Tests**: `igs-iec61850-mms/tests/gateway.rs` (two tests: a change downstream reaches the upstream model; a lost downstream association makes the
+  mirrored quality invalid, and the failed step is returned); `igs-iec61850-mms/tests/gateway_control.rs` (one test: an upstream operate is forwarded;
+  a downstream timeout gives the upstream termination negative with `Time-limit-over`; a downstream status change gives the upstream termination
+  positive).
+- **Confidence**: high for the quality on loss and the forwarded outcome (tests with real associations); medium for the mapping of a failed downstream
+  operate to `Unknown` (the downstream refusal cause is not forwarded in this release: a refusal of the downstream operate is reported as unknown).
+  The example with the peer's servers downstream (AT-16 with the reference) is not run here.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
