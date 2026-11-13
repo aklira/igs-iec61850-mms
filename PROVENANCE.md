@@ -943,10 +943,20 @@ silent, to be confirmed by an observation test against other implementations.
 - **Decision** (owner, R1): the files generated from the IEC code components (`catalogue/generated/ns_*.rs`, `scl/generated/schema_2007b.rs`) stay
   in the repository under Apache-2.0 for the code, with the IEC copyright notice, the attribution note in each file header, the SPDX identifier
   `IEC-Code-Components-EULA`, and `NOTICE` (as they are now).
-- **Open before any push**: the EULA text recorded in `NOTICE` does not say that redistribution is reserved to the purchaser of the standard; the
-  plan's R1 note does. The official text (www.iec.ch/CCv1) must be checked on that point, and the question whether the generated tables are a
-  permitted modification, before the first push.
-- **Not done here**: no push, no tag, no publication. R1 stays open until the maintainer publishes.
+- **Check of the EULA text (2026-11-13)**: the text recorded in `NOTICE` is identical, word for word, to the SPDX text of
+  `IEC-Code-Components-EULA` (fetched from spdx.org, which points to www.iec.ch/CCv1). It contains no purchaser condition: the words
+  "purchaser", "purchase", "buyer" and "licensee" are absent. The earlier note about a purchaser condition came from the general terms of the IEC
+  webstore for purchased publications, not from the Code Components licence. The official pages (www.iec.ch/CCv1 and `CC-EULA.pdf`) answered
+  HTTP 403 to the check, so the official wording itself is not verified.
+- **Modifications, still open**: the licence extends to "modifications permitted under the relevant IEC standard". Whether the generated tables
+  are such a modification depends on the code-component clause of the standards (7-2, 7-3, 7-4, 8-1, 6), which is in the purchased text. Not
+  checked here.
+- **Redistribution (fixed in 0.1.3)**: the EULA requires that redistributions keep the copyright notice, the list of conditions and the
+  disclaimer. Before 0.1.3 the published crates did not contain `NOTICE` or the licence file (the generated files point to "NOTICE at the root"),
+  so 0.1.0 to 0.1.2 do not carry them. From 0.1.3, `LICENSE` and `NOTICE` are copied into `crates/igs-iec61850-mms` and
+  `crates/igs-iec61850-mms-core` and included in the packages (`cargo package --list`). The two copies must be kept identical to the root files.
+- **Not done here**: the generated files were not regenerated; their headers keep the reference to "NOTICE at the root", which is true for the
+  repository.
 
 ## Third-party code and sources
 

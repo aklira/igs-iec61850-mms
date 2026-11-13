@@ -6,6 +6,11 @@ All notable changes to this project are recorded in this file. The format follow
 
 ## [Unreleased]
 
+### Fixed
+
+- The published packages of `igs-iec61850-mms` and `igs-iec61850-mms-core` include `LICENSE` and `NOTICE`, with the copyright
+  notice, the conditions and the disclaimer of the IEC Code Components licence that covers the generated files.
+
 ### Added
 
 - Server: logical devices, nodes and data objects served as MMS variables, read and write of the served attributes,
