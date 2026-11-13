@@ -558,7 +558,7 @@ The agent does not wait for these; it records the impact and continues with what
 | E3 Edition 1 interop | [ ] blocked: no Edition 1 peer (docs/ai-log/E3.md) |
 | G1 One runtime, clients and server | [x] |
 | G2 Proxy model, quality and controls | [x] |
-| V1 Capability statements | [ ] |
+| V1 Capability statements | [x] |
 | V2 Documentation, examples, binaries | [x] |
 | V3 Robustness and performance evidence | [x] |
 | R1 Legal review and release ⛔ | [ ] |

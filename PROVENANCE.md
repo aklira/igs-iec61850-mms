@@ -916,7 +916,8 @@ silent, to be confirmed by an observation test against other implementations.
   `docs/capabilities.tsv`, and each PIXIT value is the default of the code, named by its constant.
 - **Why by hand**: the plan has `cargo xtask statements` write these drafts; the rows of the source carry the states and the tests, but not the
   service table, the logical node list or the PIXIT values, which are text of the implementer. Generating them needs those inputs in the source first.
-  V1 stays open until the generation exists or the maintainer decides that the hand-written drafts are the deliverable.
+  Decision of the owner: the hand-written drafts are the deliverable of this release, reviewed before publication (R1). V1 is ticked on
+  its Done-when (AT-14). Generating the drafts from data is left for a later release.
 - **Not copied**: the tables of the standard's annexes (PICS, MICS, PIXIT forms) are not reproduced; the drafts use their own structure, which is
   licensed text's free paraphrase of what the library does.
 - **Confidence**: high on the PIXIT values (read from the code); medium on the ACSI and MMS lists, which restate the rows and the dispatch.
