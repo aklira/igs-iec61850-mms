@@ -9,6 +9,7 @@ description = "Sans-I/O core of IEC 61850 over MMS: object references, ACSI type
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+readme = "README.md"
 repository.workspace = true
 
 [lints]

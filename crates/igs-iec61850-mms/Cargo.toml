@@ -9,6 +9,7 @@ description = "IEC 61850 client and server over MMS: async API on the MMS crates
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+readme = "README.md"
 repository.workspace = true
 
 [lints]
