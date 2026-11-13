@@ -18,7 +18,8 @@ settles it. A gap is an item that is refused or reported explicitly, never serve
 | Optional sub data objects | Not instantiated (only the mandatory ones are) | D-005 |
 | Arrays (`is_array`) | Refused (`Unsupported`) | D-008 |
 | `Dbpos` (double-point status, DPS, DPC, `XCBR.Pos`) | Served as a two-bit coded enumeration (7-2 Table 24) | D-042 |
-| Basic types `Tcmd`, `TrgOps`, `OptFlds`, `SvOptFlds`, `EntryID`, `EntryTime`, `PhyComAddr` | Refused (`UnmappedType`) until their source clauses are read; an object that holds one is refused whole | D-008, D-042 |
+| `Tcmd` (step command, BSC) | Resolved as a two-bit coded enumeration (7-2 Table 23). It is a control-service parameter, not a data attribute, so no served object holds it yet; its control is task K | D-042 |
+| Basic types `TrgOps`, `OptFlds`, `SvOptFlds`, `EntryID`, `EntryTime`, `PhyComAddr` | Refused (`UnmappedType`) until their source clauses are read; an object that holds one is refused whole | D-008, D-042 |
 | Enumerations chosen by the instance (no type name in the class) | Refused, unless the data object gives the name (its `underlying_type`) | D-008 |
 | Classes with variants (the setting groups `SPG`, `ING`, ...) | Refused until the variant is chosen | D-008 |
 | Service attributes added by 8-1 to the controllable and reporting classes (`Oper`, `SBOw`, `Cancel`, the control blocks) | Not in the model yet: control and reporting tasks | D-008 |

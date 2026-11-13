@@ -901,6 +901,70 @@ pub fn double_position_from_data(data: &Data) -> Result<DoublePosition, AcsiErro
     })
 }
 
+/// The size in bits of a `Tcmd`: the largest standardised value of StepControlKind is 3 (§8.1.2.3).
+pub const STEP_COMMAND_SIZE: u8 = 2;
+
+/// The step command of IEC 61850-7-2 Table 23 (StepControlKind, the form of a `Tcmd`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepCommand {
+    /// Value 0: deactivate the persistent output.
+    Stop,
+    /// Value 1: decrease the step by one, or until the local timeout or `stop`.
+    Lower,
+    /// Value 2: increase the step by one, or until the local timeout or `stop`.
+    Higher,
+    /// Value 3: reserved by the standard.
+    Reserved,
+}
+
+impl StepCommand {
+    /// The value of the literal in the namespace of IEC 61850-7-2.
+    pub fn value(self) -> u32 {
+        match self {
+            Self::Stop => 0,
+            Self::Lower => 1,
+            Self::Higher => 2,
+            Self::Reserved => 3,
+        }
+    }
+
+    /// The name of the literal in the namespace of IEC 61850-7-2.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Stop => "stop",
+            Self::Lower => "lower",
+            Self::Higher => "higher",
+            Self::Reserved => "reserved",
+        }
+    }
+
+    fn from_value(value: u32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Stop),
+            1 => Some(Self::Lower),
+            2 => Some(Self::Higher),
+            3 => Some(Self::Reserved),
+            _ => None,
+        }
+    }
+}
+
+/// A step command as an MMS bit string of two bits (`Tcmd`, 8-1 §8.1.2.3).
+pub fn step_command_to_data(command: StepCommand) -> Result<Data, AcsiError> {
+    coded_enum_to_data(command.value(), STEP_COMMAND_SIZE)
+}
+
+/// Reads a step command from the bit string the peer sent; the bits past the two of the type are ignored (§8.1.2.1).
+pub fn step_command_from_data(data: &Data) -> Result<StepCommand, AcsiError> {
+    let value = coded_enum_from_data(data, STEP_COMMAND_SIZE)?;
+    StepCommand::from_value(value).ok_or(AcsiError::OutOfRange {
+        ty: "step command",
+        min: 0,
+        max: 3,
+        value: i128::from(value),
+    })
+}
+
 /// The type description of an octet string of at most `max` octets.
 pub fn describe_octets(max: i64) -> TypeDescription {
     TypeDescription::OctetString(Integer32(max))
@@ -1177,6 +1241,38 @@ mod tests {
             double_position_from_data(&Data::Integer(2)),
             Err(AcsiError::WrongType { .. })
         ));
+    }
+
+    #[test]
+    fn a_step_command_is_two_bits_with_the_values_of_table_23() {
+        assert_eq!(coded_enum_size(3), STEP_COMMAND_SIZE);
+        let vectors = [
+            (StepCommand::Stop, 0x00),
+            (StepCommand::Lower, 0x40),
+            (StepCommand::Higher, 0x80),
+            (StepCommand::Reserved, 0xC0),
+        ];
+        for (command, octet) in vectors {
+            assert_eq!(
+                step_command_to_data(command),
+                Ok(Data::BitString(BitString {
+                    unused: 6,
+                    bytes: vec![octet]
+                }))
+            );
+            assert_eq!(
+                step_command_from_data(&step_command_to_data(command).unwrap()),
+                Ok(command)
+            );
+        }
+        assert_eq!(StepCommand::Lower.name(), "lower");
+        assert_eq!(StepCommand::Higher.value(), 2);
+        // The bits past the two of the type are ignored: 01 followed by 1111 is lower.
+        let data = Data::BitString(BitString {
+            unused: 0,
+            bytes: vec![0b0111_1111],
+        });
+        assert_eq!(step_command_from_data(&data), Ok(StepCommand::Lower));
     }
 
     #[test]

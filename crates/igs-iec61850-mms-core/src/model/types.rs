@@ -15,7 +15,7 @@ use crate::acsi::{
     describe_boolean, describe_check_conditions, describe_coded_enum, describe_enumeration,
     describe_float32, describe_octets, describe_quality, describe_signed, describe_timestamp,
     describe_unicode, describe_unsigned, describe_visible, SignedInteger, UnsignedInteger,
-    DOUBLE_POSITION_SIZE,
+    DOUBLE_POSITION_SIZE, STEP_COMMAND_SIZE,
 };
 use crate::catalogue;
 
@@ -45,6 +45,8 @@ pub fn basic(name: &str) -> Option<TypeDescription> {
         "Check" => describe_check_conditions(),
         // The double-point status: a coded enumeration of two bits (7-2 Table 24, 8-1 §8.1.2.3).
         "Dbpos" => describe_coded_enum(DOUBLE_POSITION_SIZE),
+        // The step command of a tap changer: a coded enumeration of two bits (7-2 Table 23).
+        "Tcmd" => describe_coded_enum(STEP_COMMAND_SIZE),
         _ => return None,
     })
 }
@@ -73,4 +75,29 @@ pub fn enumeration_values(name: &str) -> Option<Vec<i64>> {
             .map(|literal| i64::from(literal.value))
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use igs_iso9506_mms_codec::mms::TypeDescription;
+
+    use super::basic;
+    use crate::acsi::{describe_coded_enum, DOUBLE_POSITION_SIZE, STEP_COMMAND_SIZE};
+
+    #[test]
+    fn the_double_point_and_the_step_command_are_two_bit_coded_enumerations() {
+        assert_eq!(
+            basic("Dbpos"),
+            Some(describe_coded_enum(DOUBLE_POSITION_SIZE))
+        );
+        assert_eq!(basic("Tcmd"), Some(describe_coded_enum(STEP_COMMAND_SIZE)));
+        assert_eq!(DOUBLE_POSITION_SIZE, 2);
+        assert_eq!(STEP_COMMAND_SIZE, 2);
+        // The types still unmapped are refused, never guessed.
+        assert_eq!(basic("TrgOps"), None);
+        assert!(matches!(
+            basic("Dbpos"),
+            Some(TypeDescription::BitString(_))
+        ));
+    }
 }

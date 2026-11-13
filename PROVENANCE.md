@@ -970,8 +970,10 @@ silent, to be confirmed by an observation test against other implementations.
   significant bit first), and the coded enumeration size rule of D-004.
 - **Confidence**: high for the size (the largest value is 3) and the bit order (the same rule as the other coded enumerations, with vectors); high
   for the literals (Table 24 read directly). Medium for the reading of a longer bit string, which follows D-004.
-- **Not done**: `Tcmd` (StepControlKind, Table 23 of 7-2) is the same mechanism and stays open under Q1. The control of a `Dbpos` (write of
-  `ctlVal`) is refused until task K writes its control machine, as before.
+- **`Tcmd` (same change)**: the step command of Table 23 (StepControlKind: `stop` 0, `lower` 1, `higher` 2, `reserved` 3) is a two-bit coded
+  enumeration (`StepCommand`, `step_command_to_data` and `step_command_from_data`). In the namespace `Tcmd` is the type of the `ctlVal` service
+  parameter of BSC and BAC, not of a data attribute, so no served object holds it: the mapping prepares its control (task K).
+- **Not done**: the control of a `Dbpos` or a `Tcmd` (write of `ctlVal`) is refused until task K writes its control machine, as before.
 - **Tests**: `acsi.rs`, the vectors of the four values and the reading of extra bits; `tests/model.rs`, a breaker position built with its two-bit
   status at zero, and the refusal of `BrcbTrk` (which holds `TrgOps` and `EntryID`) with its path.
 - **Not verified**: an end-to-end SCL file with a breaker was not built; the SCL build reaches the same `LogicalNode::new` call, so the refusal is

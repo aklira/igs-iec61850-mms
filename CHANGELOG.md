@@ -12,6 +12,7 @@ All notable changes to this project are recorded in this file. The format follow
   notice, the conditions and the disclaimer of the IEC Code Components licence that covers the generated files.
 - The double-point status `Dbpos` is served as a two-bit coded enumeration (7-2 Table 24). A logical node with a
   breaker position (`XCBR.Pos`) is no longer refused for that type; an SCL file with a breaker is not yet checked end to end.
+- The step command `Tcmd` is resolved as a two-bit coded enumeration (7-2 Table 23); its control follows with the control task.
 
 ### Added
 
