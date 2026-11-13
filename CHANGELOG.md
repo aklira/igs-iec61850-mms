@@ -22,6 +22,11 @@ All notable changes to this project are recorded in this file. The format follow
 - Logs: the log (a bounded buffer with entry identifiers) and its control block (recording of the changes of a data set, of the
   transitions of LogEna and of the integrity period) are state machines in the core, with the queries by time and after an entry
   and the status (7-2 §17.3). The MMS journal services are not served yet.
+- Classes with setting-group variants are served: a device with a `SettingControl` has the setting values as SG and SE, a device
+  without one as SP; the declaration of the setting groups is kept (7-3 §7.6.1; D-046).
+- Arrays are served as one MMS array per attribute, with the number of elements of the instance (`maxPts`); the element access is not
+  served (D-047).
+- The general interrogation of a buffered block is an entry of its history, with its identifier, as the reference peer keeps it (D-044).
 
 ### Added
 

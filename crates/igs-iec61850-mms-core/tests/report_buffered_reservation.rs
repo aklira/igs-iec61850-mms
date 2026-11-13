@@ -114,7 +114,8 @@ fn a_general_interrogation_is_refused_while_the_block_is_disabled() {
 }
 
 #[test]
-fn a_general_interrogation_reports_every_member_with_its_reason_and_no_entry() {
+fn a_general_interrogation_is_an_entry_of_every_member_with_its_reason() {
+    // The reference peer keeps the general-interrogation report as an entry, with its EntryID (bench row Q4, D-044): so does the block.
     let mut brcb = block(0, triggers(true));
     write_by(ALICE, ms(0), &mut brcb, Write::RptEna(true));
     let actions = write_by(ALICE, ms(10), &mut brcb, Write::GeneralInterrogation);
@@ -123,7 +124,7 @@ fn a_general_interrogation_reports_every_member_with_its_reason_and_no_entry() {
     assert_eq!(sent.len(), 1);
     let report = sent[0];
     assert_eq!(report.kind, ReportKind::GeneralInterrogation);
-    assert_eq!(report.entry_id, EntryId::NULL);
+    assert_eq!(report.entry_id, EntryId(1));
     let members: Vec<usize> = report.entries.iter().map(|entry| entry.member).collect();
     assert_eq!(members, [0, 1, 2]);
     for entry in &report.entries {
@@ -132,8 +133,8 @@ fn a_general_interrogation_reports_every_member_with_its_reason_and_no_entry() {
             BTreeSet::from([Reason::GeneralInterrogation])
         );
     }
-    // The general-interrogation report is not kept in the history.
-    assert_eq!(brcb.history().count(), 0);
+    assert_eq!(brcb.history().count(), 1);
+    assert_eq!(brcb.last_entry_id(), EntryId(1));
 }
 
 #[test]

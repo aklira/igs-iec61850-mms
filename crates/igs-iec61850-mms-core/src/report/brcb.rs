@@ -545,8 +545,8 @@ impl Brcb {
     }
 
     /// `GI` TRUE (figure 30). Refused while the block is disabled. While enabled, with the general-interrogation trigger on, the
-    /// buffered entries are sent first (the open window is closed), then one report of all the members with the reason
-    /// general-interrogation. That report is not an entry of the history, so its `EntryID` is the NULL identifier.
+    /// buffered entries are sent first (the open window is closed), then an entry of all the members with the reason
+    /// general-interrogation, which is sent with its `EntryID` (D-044).
     fn general_interrogation(&mut self, now: Duration) -> Vec<Action> {
         if self.state != State::Enabled {
             return respond(Err(Refusal::GeneralInterrogationNotAllowed));
@@ -560,28 +560,16 @@ impl Brcb {
         actions
     }
 
-    /// The general-interrogation report: every member, with its reason, and the next sequence number.
+    /// The general-interrogation entry: every member, with the reason general-interrogation. The entry is made in the history like the
+    /// others (the reference peer gives it an `EntryID`, D-044): it is sent now, while enabled, with the next sequence number.
     fn general_report(&mut self, now: Duration) -> Vec<Action> {
         let Some(count) = self.member_count() else {
             return Vec::new();
         };
-        let entries: Vec<Entry> = (0..count)
-            .map(|member| Entry {
-                member,
-                reasons: BTreeSet::from([Reason::GeneralInterrogation]),
-            })
+        let members: BTreeMap<usize, BTreeSet<Reason>> = (0..count)
+            .map(|member| (member, BTreeSet::from([Reason::GeneralInterrogation])))
             .collect();
-        let sequence = self.sequence;
-        self.sequence = self.sequence.wrapping_add(1);
-        vec![Action::Report(BufferedReport {
-            at: now,
-            sequence,
-            entry_id: EntryId::NULL,
-            time_of_entry: now,
-            buf_ovfl: false,
-            kind: ReportKind::GeneralInterrogation,
-            entries,
-        })]
+        self.push(now, now, ReportKind::GeneralInterrogation, members)
     }
 
     /// `PurgeBuf`: the history, the open window and the overflow are discarded; the next entry starts a new history.

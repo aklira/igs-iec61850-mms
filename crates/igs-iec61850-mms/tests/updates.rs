@@ -248,3 +248,52 @@ async fn a_reader_never_sees_a_value_without_the_time_of_its_update() {
     client.close().await.unwrap();
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn an_array_is_updated_with_its_number_of_elements_and_a_wrong_number_is_refused() {
+    // The points of a curve are an array of three elements (the size given by the instance). An update of three points is applied;
+    // an update of two is refused, and changes nothing (the conformance of the type, 8-1 §8.1.2.7).
+    let (_server, _client, updater) = start_with_updater().await;
+    let points = "IED1LD1/PTTR1$SP$TmTmpChr$crvPts";
+    let ty = {
+        let layout = igs_iec61850_mms_core::model::layout::layout(
+            &igs_iec61850_mms_core::model::LogicalNode::new(
+                "PTTR1",
+                "PTTR",
+                &common::with(
+                    "PTTR",
+                    vec![
+                        igs_iec61850_mms_core::model::DataObjectSpec::new("TmTmpChr")
+                            .with_attributes(["crvPts"])
+                            .with_integers(std::collections::BTreeMap::from([(
+                                "maxPts".to_string(),
+                                3,
+                            )])),
+                    ],
+                ),
+            )
+            .expect("the node is valid"),
+            igs_iec61850_mms_core::model::layout::IDENTIFIER_LIMIT,
+        )
+        .expect("the layout is built");
+        layout
+            .variables
+            .iter()
+            .find(|v| v.name == "PTTR1$SP$TmTmpChr$crvPts")
+            .expect("the points are a variable")
+            .ty
+            .clone()
+    };
+    let three = igs_iec61850_mms_core::model::layout::default_value(&ty).expect("a zero value");
+    updater
+        .update(&[Change::new(points, three)])
+        .expect("three points are applied");
+    let two = match igs_iec61850_mms_core::model::layout::default_value(&ty) {
+        Some(igs_iso9506_mms_codec::mms::Data::Array(mut items)) => {
+            items.pop();
+            igs_iso9506_mms_codec::mms::Data::Array(items)
+        }
+        other => panic!("the points are an array, found {other:?}"),
+    };
+    assert!(updater.update(&[Change::new(points, two)]).is_err());
+}

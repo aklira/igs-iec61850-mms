@@ -183,6 +183,20 @@ pub struct Configuration {
     pub values: Vec<InstanceValue>,
     /// The address parameters of the connections of the IED.
     pub addresses: Vec<Address>,
+    /// The setting groups declared by the devices of the IED (a `SettingControl` of the LN0 of a device). Their setting data objects are
+    /// served with the variants SG and SE (IEC 61850-7-3 §7.6.1); the services of the setting group control block are not executed.
+    pub setting_groups: Vec<SettingGroups>,
+}
+
+/// The setting groups of a logical device (a `SettingControl`, IEC 61850-6 §8.6), as declared.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingGroups {
+    /// The logical device.
+    pub device: String,
+    /// The number of setting groups (`numOfSGs`, at least one).
+    pub num_of_sgs: u32,
+    /// The setting group active when the configuration is loaded (`actSG`, from one to `numOfSGs`).
+    pub active: u32,
 }
 
 /// Builds the configuration of the IED `ied` of a validated document, with what the server executes. Returns every
@@ -202,6 +216,7 @@ pub fn build(
         reports: Vec::new(),
         buffered: Vec::new(),
         values: Vec::new(),
+        setting_groups: Vec::new(),
     };
     let Some(ied_element) = root
         .children
@@ -240,6 +255,14 @@ pub fn build(
             {
                 let device_path = segment(&server_path, device);
                 let inst = device.attribute("inst").unwrap_or_default();
+                // A device with a SettingControl in its LN0 has setting groups (IEC 61850-6, 8.6); its setting data objects are SG and SE.
+                let groups = device.children.iter().any(|child| {
+                    child.name == "LN0"
+                        && child
+                            .children
+                            .iter()
+                            .any(|control| control.name == "SettingControl")
+                });
                 let mut nodes = Vec::new();
                 for node in device
                     .children
@@ -247,7 +270,8 @@ pub fn build(
                     .filter(|child| child.name == "LN0" || child.name == "LN")
                 {
                     let node_path = segment(&device_path, node);
-                    if let Some(logical) = builder.logical_node(node, &node_path, inst, &templates)
+                    if let Some(logical) =
+                        builder.logical_node(node, &node_path, inst, &templates, groups)
                     {
                         nodes.push(logical);
                     }
@@ -278,6 +302,7 @@ pub fn build(
     let reports = std::mem::take(&mut builder.reports);
     let buffered = std::mem::take(&mut builder.buffered);
     let values = std::mem::take(&mut builder.values);
+    let setting_groups = std::mem::take(&mut builder.setting_groups);
     builder.finish()?;
     Ok(Configuration {
         ied: ied.to_string(),
@@ -287,6 +312,7 @@ pub fn build(
         buffered,
         values,
         addresses,
+        setting_groups,
     })
 }
 
@@ -298,6 +324,7 @@ struct Builder<'a> {
     reports: Vec<ReportDecl>,
     buffered: Vec<BufferedDecl>,
     values: Vec<InstanceValue>,
+    setting_groups: Vec<SettingGroups>,
 }
 
 impl Builder<'_> {
@@ -375,6 +402,41 @@ impl Builder<'_> {
             resolved.push(set);
         }
         resolved
+    }
+
+    /// The `SettingControl` of a device: the number of setting groups and the active one, checked (`numOfSGs` at least one, `actSG`
+    /// from one to `numOfSGs`; the defaults are one). The setting group control block services are not declared here.
+    fn setting_control(&mut self, block: &Element, path: &str, device_inst: &str) {
+        let number = |name: &str, default: u32| -> Option<u32> {
+            match block.attribute(name) {
+                None => Some(default),
+                Some(text) => text.trim().parse::<u32>().ok(),
+            }
+        };
+        let (Some(num_of_sgs), Some(active)) = (number("numOfSGs", 1), number("actSG", 1)) else {
+            self.report(
+                "SCL-003",
+                block,
+                path,
+                "the number of setting groups or the active one is not an unsigned number"
+                    .to_string(),
+            );
+            return;
+        };
+        if num_of_sgs == 0 || active == 0 || active > num_of_sgs {
+            self.report(
+                "SCL-003",
+                block,
+                path,
+                format!("the active setting group {active} is not within the {num_of_sgs} setting groups"),
+            );
+            return;
+        }
+        self.setting_groups.push(SettingGroups {
+            device: device_inst.to_string(),
+            num_of_sgs,
+            active,
+        });
     }
 
     /// SCOPE-002: a service declared under an access point, which the server does not execute.
@@ -456,6 +518,7 @@ impl Builder<'_> {
         path: &str,
         device_inst: &str,
         templates: &Templates<'_>,
+        groups: bool,
     ) -> Option<LogicalNode> {
         let prefix = node.attribute("prefix").unwrap_or_default();
         let class = node.attribute("lnClass").unwrap_or_default();
@@ -489,11 +552,14 @@ impl Builder<'_> {
                 .filter(|child| child.name == "DA" || child.name == "SDO")
                 .filter_map(|child| child.attribute("name"))
                 .collect();
-            specs.push(DataObjectSpec::new(object_name).with_attributes(attributes));
+            let spec = DataObjectSpec::new(object_name)
+                .with_attributes(attributes)
+                .with_integers(integer_values(node, object_name));
+            specs.push(spec);
         }
         self.instances(node, path, ln_type, templates, device_inst, &name);
 
-        let logical = match LogicalNode::new(&name, class, &specs) {
+        let logical = match LogicalNode::with_setting_groups(&name, class, &specs, groups) {
             Ok(logical) => logical,
             Err(error) => {
                 self.report(
@@ -737,6 +803,10 @@ impl Builder<'_> {
         }) {
             let name = block.attribute("name").unwrap_or_default();
             let block_path = segment(path, block);
+            if block.name == "SettingControl" {
+                self.setting_control(block, &block_path, device_inst);
+                continue;
+            }
             let buffered = flag(Some(block), "buffered");
             if block.name == "ReportControl"
                 && buffered
@@ -774,6 +844,33 @@ impl Builder<'_> {
             );
         }
     }
+}
+
+/// The integer values that the instance gives to the attributes of a data object (the `Val` of its `DAI`s, as in `DOI name="maxPts"`
+/// of a logical node): the sizes of its arrays. A value that is not an integer is left out.
+fn integer_values(node: &Element, object: &str) -> std::collections::BTreeMap<String, i64> {
+    let mut values = std::collections::BTreeMap::new();
+    for instance in node
+        .children
+        .iter()
+        .filter(|child| child.name == "DOI" && child.attribute("name") == Some(object))
+    {
+        for attribute in instance.children.iter().filter(|child| child.name == "DAI") {
+            let Some(name) = attribute.attribute("name") else {
+                continue;
+            };
+            let Some(value) = attribute
+                .children
+                .iter()
+                .find(|child| child.name == "Val")
+                .and_then(|val| val.text.trim().parse::<i64>().ok())
+            else {
+                continue;
+            };
+            values.insert(name.to_string(), value);
+        }
+    }
+    values
 }
 
 /// The configuration of an unbuffered report control block, from its element and the data sets of its node.

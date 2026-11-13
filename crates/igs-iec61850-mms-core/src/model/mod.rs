@@ -26,7 +26,7 @@
 pub mod layout;
 pub mod types;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use igs_iso9506_mms_codec::mms::TypeDescription;
@@ -174,6 +174,8 @@ pub fn instance_of(name: &str, definition: &catalogue::DataObject) -> bool {
 pub struct DataObjectSpec {
     name: String,
     attributes: Vec<String>,
+    /// The integer values that the instance gives to its own data attributes, by name: the sizes of the arrays (`maxPts`).
+    integers: BTreeMap<String, i64>,
 }
 
 impl DataObjectSpec {
@@ -182,12 +184,19 @@ impl DataObjectSpec {
         Self {
             name: name.to_string(),
             attributes: Vec::new(),
+            integers: BTreeMap::new(),
         }
     }
 
     /// The name of the data object.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The integer values that the instance gives to the attributes of the object: the sizes of its arrays.
+    pub fn with_integers(mut self, values: BTreeMap<String, i64>) -> Self {
+        self.integers = values;
+        self
     }
 
     /// Adds the optional or conditional attributes (or sub data objects) that the object instantiates.
@@ -229,6 +238,14 @@ pub enum Node {
     },
     /// A branch, with its members.
     Branch(Vec<Element>),
+    /// An array of `count` elements of the type of its element (IEC 61850-7-2 `ARRAY 0..m OF p`; 8-1 §8.1.2.7). The count is given by
+    /// the instance (the size attribute of the common data class, IEC 61850-7-2 §6.2.5.5).
+    Array {
+        /// The number of elements.
+        count: u32,
+        /// The element.
+        element: Box<Node>,
+    },
 }
 
 /// Whether a common data class is controllable: its class has the service attributes of 8-1 (`Oper`, `SBO`, `Cancel`).
@@ -273,6 +290,17 @@ impl LogicalNode {
     /// Builds a logical node of `class` named `name`, with the data objects `specs`, after the checks of the
     /// module.
     pub fn new(name: &str, class: &str, specs: &[DataObjectSpec]) -> Result<Self, ModelError> {
+        Self::with_setting_groups(name, class, specs, false)
+    }
+
+    /// Builds a logical node as [`LogicalNode::new`], in a device that has setting groups (`groups` true: a `SettingControl` of
+    /// the device, IEC 61850-6) or not. The setting data objects take the variant of the device (IEC 61850-7-3 §7.6.1).
+    pub fn with_setting_groups(
+        name: &str,
+        class: &str,
+        specs: &[DataObjectSpec],
+        groups: bool,
+    ) -> Result<Self, ModelError> {
         let name = Name::new(name)?;
         let definition = catalogue::ln_class(class)
             .ok_or_else(|| ModelError::UnknownLnClass(class.to_string()))?;
@@ -311,9 +339,17 @@ impl LogicalNode {
                 continue;
             };
             let object_path = format!("{path}.{}", spec.name);
-            let cdc = single_cdc(candidate.cdc, &object_path)?;
-            let listed = check_listed(cdc, &spec.attributes, &object_path)?;
-            let members = members_of(cdc, &listed, &object_path, 0, candidate.underlying_type)?;
+            let shape = data_object_shape(candidate.cdc, groups, &object_path)?;
+            let listed = check_listed(&shape, &spec.attributes, &object_path)?;
+            let members = members_of(
+                &shape,
+                &listed,
+                &object_path,
+                0,
+                candidate.underlying_type,
+                groups,
+                &spec.integers,
+            )?;
             objects.push(Element {
                 name: spec.name.clone(),
                 fc: None,
@@ -408,29 +444,58 @@ impl ServerModel {
     }
 }
 
-fn single_cdc(name: &str, path: &str) -> Result<&'static catalogue::Cdc, ModelError> {
-    let matches: Vec<&'static catalogue::Cdc> = catalogue::generated::ns_7_3::CDCS
+/// The attributes of a data object, as its device instantiates them. A common data class with setting-group variants (IEC 61850-7-3
+/// §7.6.1) is the variant SP alone in a device without setting groups; in a device with setting groups, the active values (SG) and
+/// the values edited (SE), which are the attributes of the variant SE with their own functional constraint.
+struct Shape {
+    base: &'static catalogue::Cdc,
+    attributes: Vec<&'static catalogue::DataAttribute>,
+}
+
+fn data_object_shape(name: &str, groups: bool, path: &str) -> Result<Shape, ModelError> {
+    let unknown = || ModelError::UnknownCdc {
+        path: path.to_string(),
+        cdc: name.to_string(),
+    };
+    let classes: Vec<&'static catalogue::Cdc> = catalogue::generated::ns_7_3::CDCS
         .iter()
         .filter(|c| c.name == name)
         .collect();
-    // A common data class with variants (the setting groups) needs the choice of the variant, which is not made yet.
-    if matches.len() != 1 {
-        return Err(ModelError::UnknownCdc {
-            path: path.to_string(),
-            cdc: name.to_string(),
+    if let [only] = classes.as_slice() {
+        return Ok(Shape {
+            base: only,
+            attributes: only.data_attributes.iter().collect(),
         });
     }
-    matches
-        .first()
-        .copied()
-        .ok_or_else(|| ModelError::UnknownCdc {
-            path: path.to_string(),
-            cdc: name.to_string(),
+    let variant = |wanted: &str| {
+        classes
+            .iter()
+            .copied()
+            .find(|c| c.variant == Some(wanted))
+            .ok_or_else(unknown)
+    };
+    if groups {
+        let sg = variant("SG")?;
+        let se = variant("SE")?;
+        let mut attributes: Vec<&'static catalogue::DataAttribute> =
+            sg.data_attributes.iter().collect();
+        // The attributes of SE that are edited values; the others (description, extension) are the same as in SG.
+        attributes.extend(se.data_attributes.iter().filter(|a| a.fc == "SE"));
+        Ok(Shape {
+            base: sg,
+            attributes,
         })
+    } else {
+        let sp = variant("SP")?;
+        Ok(Shape {
+            base: sp,
+            attributes: sp.data_attributes.iter().collect(),
+        })
+    }
 }
 
 fn check_listed(
-    cdc: &catalogue::Cdc,
+    shape: &Shape,
     listed: &[String],
     path: &str,
 ) -> Result<BTreeSet<String>, ModelError> {
@@ -442,8 +507,8 @@ fn check_listed(
                 name: name.clone(),
             });
         }
-        let defined = cdc.data_attributes.iter().any(|a| a.name == name)
-            || cdc.sub_data_objects.iter().any(|s| s.name == name);
+        let defined = shape.attributes.iter().any(|a| a.name == name)
+            || shape.base.sub_data_objects.iter().any(|s| s.name == name);
         if !defined {
             return Err(ModelError::UnknownAttribute {
                 path: path.to_string(),
@@ -459,11 +524,13 @@ fn check_listed(
 /// `underlying` is the type name that the data object of the class gives to the attributes whose type the class
 /// leaves open (the enumeration of an enumerated status, IEC 61850-7-3 parameterised classes).
 fn members_of(
-    cdc: &catalogue::Cdc,
+    shape: &Shape,
     listed: &BTreeSet<String>,
     path: &str,
     depth: usize,
     underlying: Option<&'static str>,
+    groups: bool,
+    integers: &BTreeMap<String, i64>,
 ) -> Result<Vec<Element>, ModelError> {
     if depth >= MAX_DEPTH {
         return Err(ModelError::TooDeep {
@@ -471,21 +538,23 @@ fn members_of(
         });
     }
     let mut members = Vec::new();
-    for attribute in cdc.data_attributes {
+    for attribute in &shape.attributes {
         if is_required(&attribute.presence) || listed.contains(attribute.name) {
-            members.push(attribute_element(attribute, path, underlying)?);
+            members.push(attribute_element(attribute, path, underlying, integers)?);
         }
     }
-    for sub in cdc.sub_data_objects {
+    for sub in shape.base.sub_data_objects {
         if is_required(&sub.presence) || listed.contains(sub.name) {
             let sub_path = format!("{path}.{}", sub.name);
-            let sub_cdc = single_cdc(sub.cdc, &sub_path)?;
+            let sub_shape = data_object_shape(sub.cdc, groups, &sub_path)?;
             let sub_members = members_of(
-                sub_cdc,
+                &sub_shape,
                 &BTreeSet::new(),
                 &sub_path,
                 depth.saturating_add(1),
                 None,
+                groups,
+                &BTreeMap::new(),
             )?;
             members.push(Element {
                 name: sub.name.to_string(),
@@ -498,24 +567,45 @@ fn members_of(
     Ok(members)
 }
 
+/// The most elements an array may have in a configuration (the sizes of the curves and the histories are a few hundred).
+const MAX_ARRAY_ELEMENTS: u32 = 4096;
+
 fn attribute_element(
     attribute: &catalogue::DataAttribute,
     path: &str,
     underlying: Option<&'static str>,
+    integers: &BTreeMap<String, i64>,
 ) -> Result<Element, ModelError> {
     let here = format!("{path}.{}", attribute.name);
-    if attribute.is_array {
-        return Err(ModelError::Unsupported {
-            path: here,
-            reason: "array attributes are not mapped yet",
-        });
-    }
     // An attribute the class leaves without a type name takes the name of its data object, with its own kind.
     let (type_name, kind) = match (attribute.type_name, underlying) {
         (None, Some(name)) => (Some(name), attribute.type_kind),
         _ => (attribute.type_name, attribute.type_kind),
     };
-    let node = resolve(&here, type_name, kind, 0)?;
+    let node = if attribute.is_array {
+        // The number of elements is the value that the instance gives to the size attribute of the class (7-2 §6.2.5.5).
+        let count = attribute
+            .size_attribute
+            .and_then(|size| integers.get(size))
+            .copied()
+            .ok_or_else(|| ModelError::Unsupported {
+                path: here.clone(),
+                reason: "the number of elements of the array is not given by the instance",
+            })?;
+        let count = u32::try_from(count)
+            .ok()
+            .filter(|count| *count <= MAX_ARRAY_ELEMENTS)
+            .ok_or_else(|| ModelError::Unsupported {
+                path: here.clone(),
+                reason: "the number of elements of the array is out of range",
+            })?;
+        Node::Array {
+            count,
+            element: Box::new(resolve(&here, type_name, kind, 0)?),
+        }
+    } else {
+        resolve(&here, type_name, kind, 0)?
+    };
     Ok(Element {
         name: attribute.name.to_string(),
         fc: Some(attribute.fc),

@@ -67,7 +67,22 @@ pub fn model() -> ServerModel {
         &with("MMXU", vec![DataObjectSpec::new("TotW")]),
     )
     .expect("the node is valid");
-    let device = LogicalDevice::new(DOMAIN, vec![ggio, mmxu]).expect("the device is valid");
+    // A curve setting: its points are an array of three elements (the size given by the instance, `maxPts`).
+    let pttr = LogicalNode::new(
+        "PTTR1",
+        "PTTR",
+        &with(
+            "PTTR",
+            vec![DataObjectSpec::new("TmTmpChr")
+                .with_attributes(["crvPts"])
+                .with_integers(std::collections::BTreeMap::from([(
+                    "maxPts".to_string(),
+                    3,
+                )]))],
+        ),
+    )
+    .expect("the node is valid");
+    let device = LogicalDevice::new(DOMAIN, vec![ggio, mmxu, pttr]).expect("the device is valid");
     let mut server = ServerModel::new();
     server.add_device(device).expect("a new device");
     server

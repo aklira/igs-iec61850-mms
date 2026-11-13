@@ -21,7 +21,8 @@
 
 use igs_iso9506_mms_codec::mms::{
     Data, DataMMSString, FloatingPoint, Identifier, TimeOfDay, TypeDescription,
-    TypeDescriptionStructure, TypeDescriptionStructureComponentsItem, TypeSpecification, UtcTime,
+    TypeDescriptionArray, TypeDescriptionStructure, TypeDescriptionStructureComponentsItem,
+    TypeSpecification, Unsigned32, UtcTime,
 };
 use igs_iso9506_mms_codec::schema::BitString as BitStringValue;
 
@@ -127,6 +128,15 @@ pub fn default_value(ty: &TypeDescription) -> Option<Data> {
         TypeDescription::VisibleString(_) => Data::VisibleString(String::new()),
         TypeDescription::MMSString(_) => Data::MMSString(DataMMSString(String::new())),
         TypeDescription::UtcTime => Data::UtcTime(UtcTime(vec![0u8; 8])),
+        // Every element takes the zero of the element type.
+        TypeDescription::Array(array) => {
+            let count = usize::try_from(array.number_of_elements.0).ok()?;
+            let element = match array.element_type.as_ref() {
+                TypeSpecification::TypeDescription(inner) => default_value(inner)?,
+                TypeSpecification::TypeName(_) => return None,
+            };
+            Data::Array(vec![element; count])
+        }
         // The zero time of day: the six-octet form (`true`) carries the day, the four-octet form does not.
         TypeDescription::BinaryTime(six_octets) => Data::BinaryTime(if *six_octets {
             TimeOfDay::from_milliseconds_and_day(0, 0).ok()?
@@ -180,9 +190,13 @@ pub fn defines_enumerations(value: &Data, enumerations: &[DefinedValues]) -> boo
         })
 }
 
-/// The type of a member: its leaf or enumeration type, or the structure of its members.
+/// The type of a member: its leaf or enumeration type, the structure of its members, or the array of its element.
 fn describe(element: &Element) -> TypeDescription {
-    match &element.node {
+    describe_node(&element.node)
+}
+
+fn describe_node(node: &Node) -> TypeDescription {
+    match node {
         Node::Leaf(ty) | Node::Enumerated { ty, .. } => ty.clone(),
         Node::Branch(members) => {
             let parts: Vec<(String, TypeDescription)> = members
@@ -191,6 +205,13 @@ fn describe(element: &Element) -> TypeDescription {
                 .collect();
             structure(parts)
         }
+        Node::Array { count, element } => TypeDescription::Array(Box::new(TypeDescriptionArray {
+            packed: None,
+            number_of_elements: Unsigned32(i64::from(*count)),
+            element_type: Box::new(TypeSpecification::TypeDescription(Box::new(describe_node(
+                element,
+            )))),
+        })),
     }
 }
 
@@ -220,6 +241,8 @@ fn enumerations_of(element: &Element) -> Vec<DefinedValues> {
             .enumerate()
             .flat_map(|(index, member)| with_prefix(index, enumerations_of(member)))
             .collect(),
+        // The elements of an array are not named members: their enumerations are not checked by name.
+        Node::Array { .. } => Vec::new(),
     }
 }
 

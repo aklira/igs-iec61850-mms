@@ -108,6 +108,9 @@ enum Command {
         /// Resynchronises to this entry (sixteen hexadecimal digits) before enabling: the reports start after it.
         #[arg(long)]
         resume_after: Option<String>,
+        /// Requests a general interrogation once the block is enabled (Q4): every member is reported with that reason.
+        #[arg(long)]
+        general_interrogation: bool,
     },
 }
 
@@ -258,6 +261,7 @@ async fn execute(
             integrity_ms,
             seconds,
             resume_after,
+            general_interrogation,
         } => {
             let resume = match resume_after {
                 Some(text) => Some(EntryId(
@@ -276,6 +280,7 @@ async fn execute(
                 integrity_ms,
                 seconds,
                 resume,
+                general_interrogation,
             )
             .await;
         }
@@ -295,6 +300,7 @@ async fn buffered(
     integrity_ms: u32,
     seconds: u64,
     resume_after: Option<EntryId>,
+    general_interrogation: bool,
 ) -> Result<bool, Failure> {
     let values = client.buffered_values(device, node, block).await?;
     println!(
@@ -325,7 +331,7 @@ async fn buffered(
         quality_change: true,
         data_update: true,
         integrity: integrity_ms > 0,
-        general_interrogation: false,
+        general_interrogation,
     };
     let mut steps = vec![
         BufferedWrite::DataSet(Some(data_set)),
@@ -338,6 +344,9 @@ async fn buffered(
         steps.push(BufferedWrite::EntryId(entry));
     }
     steps.push(BufferedWrite::Enable(true));
+    if general_interrogation {
+        steps.push(BufferedWrite::GeneralInterrogation);
+    }
     for step in steps {
         if let Err(error) = client.buffered_write(device, node, block, step).await? {
             println!("the block refuses a write: {error:?}");

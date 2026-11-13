@@ -616,9 +616,9 @@ The agent does not wait for these; it records the impact and continues with what
 | V2 Documentation, examples, binaries | [x] |
 | V3 Robustness and performance evidence | [x] |
 | Q1 Double-point and tap-command basic types | [x] `Dbpos`, `Tcmd`, the trigger, option and entry types done, with an SCL breaker check (D-042, D-043, docs/ai-log/Q1.md); `PhyComAddr` stays refused by decision |
-| Q2 Classes with variants (setting groups) | [ ] |
-| Q3 Arrays and enumerations chosen by the instance | [ ] |
-| Q4 Buffered reports: general interrogation and reservation | [ ] core, server and client done (D-044, docs/ai-log/Q4.md); bench row against the reference peer open |
+| Q2 Classes with variants (setting groups) | [x] SP, or SG and SE with a `SettingControl`; the SGCB services stay with O3 (D-046) |
+| Q3 Arrays and enumerations chosen by the instance | [x] arrays with the size of the instance; enumerations are named for every standard attribute (D-047); element access stays refused |
+| Q4 Buffered reports: general interrogation and reservation | [x] core, server, client and the bench row against the reference peer (D-044, docs/interop.md matrix C4, docs/ai-log/Q4.md) |
 | Q5 Log services | [ ] core done: log buffer, queries, log control block (D-045, docs/ai-log/Q5.md); the MMS journal services (ReadJournal, LCB and LOG on the server) wait for a phase N in `igs-iso9506-mms` |
 | Q6 File services | [ ] |
 | R1 Legal review and release ⛔ | [ ] |

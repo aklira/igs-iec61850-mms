@@ -1018,9 +1018,9 @@ silent, to be confirmed by an observation test against other implementations.
     sent before the interrogation (the text says so); then one report of every member, with the reason general-interrogation;
   - with the trigger off: a positive response, nothing sent;
   - `GI` is not kept as a state: it is FALSE at once, as the figure has it.
-  - The report is **not an entry of the history** (the figure has no buffering step for it, only "queue" and "format" of the pending
-    information): its `EntryID` is the NULL identifier and it takes the next sequence number. Confidence medium; to confront with the
-    reference peer.
+  - The report is an **entry of the history**, with its own `EntryID` and the next sequence number. The first reading (a report outside the
+    history, with the NULL identifier) was wrong: the reference peer keeps the general interrogation as an entry, with an identifier after
+    its last entry (bench row Q4, `docs/interop.md`, matrix C4).
   - Not done: the restart of an interrogation that is being sent in segments (the text says a new request stops the remaining segments).
 - **Reservation** (`ResvTms`, 17.2.2.17), `Write::ReserveTime(seconds)`:
   - a free block is reserved for the writer; the holder changes its time; zero releases it; zero on a free block is a positive answer;
@@ -1072,6 +1072,50 @@ silent, to be confirmed by an observation test against other implementations.
 - **Tests**: `tests/logs.rs` (10 tests with controlled time): the bounded buffer and the identifiers, the queries by time and after an
   entry, the status, the recording while enabled only, the transitions of LogEna, the refusal of configuration while enabled, the refusal
   of the general interrogation, the requirements for enabling, and the integrity period.
+
+### D-046 — Classes with setting-group variants: SP, or SG and SE with the device's setting groups (task Q2)
+
+- **Sources**: IEC 61850-7-3 §7.6.1 (the settings are split into the variants SP, SG and SE: SP for an individual setting, SG for a setting
+  in a setting group, SE for the value edited in the group selected for editing), the variant classes of the catalogue (`SPG`, `ING`, `ASG`,
+  `CURVE`, `ENG`... each with SP, SG and SE); IEC 61850-6 (the `SettingControl` of the LN0 declares the setting groups, `numOfSGs` and
+  `actSG`, §8.6). The 7-3 text was extracted from the PDF of the standard (`docs/standard/IEC61850/`), as the prepared texts do not hold it.
+- **Rule**: in a device without a `SettingControl`, a setting takes the variant SP. In a device with one, it takes SG (its active value) and SE
+  (its edited value): the attributes of SE with the functional constraint `SE` are added to those of SG, and the description and the extension
+  are not repeated. The variant depends on the device, not on the instance of the data object.
+- **Declaration**: the `SettingControl` is kept in the configuration (`Configuration.setting_groups`): the device, `numOfSGs` (at least one,
+  default one) and `actSG` (from one to `numOfSGs`, default one). An out-of-range value is refused (`SCL-003`). Before this change it was
+  refused as not built (SCOPE-002), which lost it.
+- **Not done (O3)**: the services of the setting group control block (SelectActiveSG, SelectEditSG, SetEditSGValue, ConfirmEditSGValues,
+  GetSGCBValues) are declared services, so they are refused (SCOPE-002); the values of SG and SE are read, and their writes are refused
+  (SE is not writable without the services).
+- **Tests**: `model.rs`, `a_setting_object_takes_the_variant_of_its_device` (SP without groups; SG and SE with them, no repeated attribute);
+  `scl_build.rs`, a device with a `SettingControl` builds with `LLN0$SG$MltLev$setVal` and `LLN0$SE$MltLev$setVal`, its declaration is kept,
+  and `actSG` three of two groups is refused.
+- **Confidence**: high for the variant rule (read from 7-3 §7.6.1) and the shape of the attributes (the catalogue); medium for the reading
+  that the SG and SE attributes of one setting form one data object, which the flattened names of 8-1 §7.3 suggest.
+
+### D-047 — Arrays, and the enumerations chosen by the instance (task Q3)
+
+- **Arrays**: an attribute `is_array` is one MMS variable of the array type (8-1 §8.1.2.7: the IEC 61850-7-2 array maps to an MMS array
+  for each functional constraint). The number of elements is the value of its size attribute (`size_attribute`, here `maxPts`) in the
+  instance: the integer `Val` of the `DAI` of the data object (`DOI`), read by the SCL build (`integer_values`). An array whose size is not
+  given is refused (`Unsupported`), and so is a size above 4096 elements (`MAX_ARRAY_ELEMENTS`). The elements have the type of the attribute
+  (a basic type or a structure such as `Point`); the initial value holds that many zero elements.
+  - The write of a whole array is checked against its number of elements by the MMS layer (`vmd/conform.rs`, `array_conforms`): a wrong
+    count is refused, which the test `an_array_is_updated_with_its_number_of_elements_and_a_wrong_number_is_refused` shows.
+  - Not done: the access to one element (the alternate access, 8-1 §8.1.3 and §24.2.2.4, D-009) is refused.
+  - Scope of the catalogue: six attributes are arrays (`hstVal`, `hstRangeC` of the history classes HST and HMV, `crvPts` of the curve
+    settings CSG and CSD, which the case tested covers with `PTTR.TmTmpChr`).
+- **Enumerations chosen by the instance**: the catalogue gives a name to every enumerated attribute of the classes that have one: the
+  attribute's own type, or the `underlying_type` of its data object. This was checked for every data object of the classes ENC, ENG and ENS
+  (93 data objects, none without a name). The refusal `Unsupported` is kept for an attribute without a name, which the catalogue does not
+  have. A mechanism that takes the values from the SCL `EnumType` was written and removed: nothing in the standard namespace needs it, and
+  code that is not reached is not kept.
+- **Tests**: `model.rs`, `an_array_has_the_number_of_elements_its_instance_gives` (refused without the size; three elements with it, of the
+  point type; the initial value holds three zero elements); `updates.rs`, `an_array_is_updated_with_its_number_of_elements_and_a_wrong_number_is_refused`
+  (three points applied, two refused, through the served model).
+- **Confidence**: high for the size rule (7-2 §6.2.5.5 and the 8-1 mapping), medium for the reading of the size attribute as an instance value
+  (the SCL `DAI`), which the catalogue names but does not give.
 
 ## Third-party code and sources
 

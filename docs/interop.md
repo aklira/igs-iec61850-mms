@@ -86,6 +86,19 @@ the decoder reads (D-038). The first attempt failed on that order: the decoder n
 Not covered: the reverse direction (the reference example client receives the buffered reports of our server), and the resumption of the peer
 after a lost association (our client sets an entry identifier of the peer and enables the block). Both are in the gap table below.
 
+## Matrix C4: buffered general interrogation, our client against the reference server (task Q4)
+
+`bench/tests/test_q4_general_interrogation.py`: our client enables the buffered block `EventsBRCB01` and requests a general interrogation
+(`--general-interrogation`). The reference server answers with the report of its four members, each with the reason general-interrogation.
+
+| Row | Result |
+| --- | --- |
+| General interrogation of an enabled buffered block: one report of every member | Passes. The report carries an entry identifier (`000001a1d5dfc2d5`, after the last entry of the peer) and sequence 0: the peer keeps the general interrogation as an entry of its history. Our block does the same since Q4 (D-044) |
+
+The first design kept the general interrogation out of the history, with the NULL entry identifier; the peer contradicted it, so the block
+now keeps it as an entry. The reverse direction (the reference example client asks our buffered block for a general interrogation) is not
+in the bench yet.
+
 ## Findings of the bench, and the fixes
 
 - **The order of a listing.** The first version of the client refused a page of names that was not sorted. The reference

@@ -38,7 +38,11 @@ async fn the_logical_devices_and_nodes_are_listed() {
     assert_eq!(client.domains().await.unwrap(), vec![DEVICE.to_string()]);
     assert_eq!(
         client.logical_nodes(DEVICE).await.unwrap(),
-        vec!["GGIO1".to_string(), MEASURING.to_string()]
+        vec![
+            "GGIO1".to_string(),
+            MEASURING.to_string(),
+            "PTTR1".to_string()
+        ]
     );
     client.close().await.unwrap();
     server.shutdown().await;

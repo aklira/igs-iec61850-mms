@@ -19,6 +19,7 @@ use igs_iec61850_mms_core::model::{
 };
 use igs_iso9506_mms_codec::mms::{Data, Integer32, TypeDescription, TypeSpecification};
 use igs_iso9506_mms_codec::schema::BitString;
+use std::collections::BTreeMap;
 
 /// The mandatory data objects of a class, with no attribute: the base of every test node.
 fn required(class: &str) -> Vec<DataObjectSpec> {
@@ -408,4 +409,76 @@ fn a_mandatory_object_check_uses_the_conditions_named_m_only() {
         condition: "MOcond",
         arguments: None
     }));
+}
+
+#[test]
+fn a_setting_object_takes_the_variant_of_its_device() {
+    // LLN0.MltLev is a single point setting (SPG): the variant SP in a device without setting groups; in a device with setting
+    // groups, the active value (SG) and the value edited (SE), and not SP (IEC 61850-7-3 §7.6.1).
+    let specs = with("LLN0", "MltLev", vec![DataObjectSpec::new("MltLev")]);
+    let plain = LogicalNode::new("LLN0", "LLN0", &specs).expect("the node is valid");
+    let plain_names = names(&plain, IDENTIFIER_LIMIT);
+    assert!(plain_names.contains(&"LLN0$SP$MltLev$setVal".to_string()));
+    assert!(!plain_names
+        .iter()
+        .any(|n| n.contains("$SG$") || n.contains("$SE$")));
+
+    let grouped =
+        LogicalNode::with_setting_groups("LLN0", "LLN0", &specs, true).expect("the node is valid");
+    let grouped_names = names(&grouped, IDENTIFIER_LIMIT);
+    assert!(grouped_names.contains(&"LLN0$SG$MltLev$setVal".to_string()));
+    assert!(grouped_names.contains(&"LLN0$SE$MltLev$setVal".to_string()));
+    assert!(!grouped_names.iter().any(|n| n.contains("$SP$")));
+    // The attributes shared by SG and SE (the description, the extension) are not repeated.
+    let mut unique = grouped_names.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), grouped_names.len());
+}
+
+#[test]
+fn an_array_has_the_number_of_elements_its_instance_gives() {
+    // PTTR.TmTmpChr is a curve setting (CSG): its points crvPts are an array whose size is maxPts, given by the instance (IEC 61850-7-2
+    // §6.2.5.5).
+    // Without the size it is refused; with it, the array has that many elements, each of the type of a point, and its initial value
+    // holds that many zero points.
+    // The points are optional: the object lists them to instantiate them.
+    let without = with(
+        "PTTR",
+        "TmTmpChr",
+        vec![DataObjectSpec::new("TmTmpChr").with_attributes(["crvPts"])],
+    );
+    let refused = LogicalNode::new("PTTR1", "PTTR", &without);
+    assert!(
+        matches!(&refused, Err(ModelError::Unsupported { .. })),
+        "found {refused:?}"
+    );
+    let sized = with(
+        "PTTR",
+        "TmTmpChr",
+        vec![DataObjectSpec::new("TmTmpChr")
+            .with_attributes(["crvPts"])
+            .with_integers(BTreeMap::from([("maxPts".to_string(), 3)]))],
+    );
+    let node = LogicalNode::new("PTTR1", "PTTR", &sized).expect("the node is valid");
+    let layout = layout(&node, IDENTIFIER_LIMIT).unwrap();
+    let points = layout
+        .variables
+        .iter()
+        .find(|v| v.name == "PTTR1$SP$TmTmpChr$crvPts")
+        .expect("the points are a variable");
+    match &points.ty {
+        TypeDescription::Array(array) => {
+            assert_eq!(array.number_of_elements.0, 3);
+            assert!(matches!(
+                array.element_type.as_ref(),
+                TypeSpecification::TypeDescription(_)
+            ));
+        }
+        other => panic!("the points are an array, found {other:?}"),
+    }
+    match value_at(&layout.root_value, &points.path) {
+        Data::Array(elements) => assert_eq!(elements.len(), 3),
+        other => panic!("the initial value is an array, found {other:?}"),
+    }
 }

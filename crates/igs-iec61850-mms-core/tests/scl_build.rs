@@ -367,3 +367,47 @@ fn a_breaker_with_a_double_point_position_builds_and_its_position_is_two_bits() 
         })
     );
 }
+
+const SETTINGS: &str = include_str!("data/settings.cid");
+
+#[test]
+fn a_device_with_setting_groups_serves_the_setting_values_as_sg_and_se() {
+    // The device has a SettingControl in its LLN0 (setting groups): the setting MltLev is the variants SG (the active value)
+    // and SE (the value edited), and not SP (IEC 61850-7-3 7.6.1).
+    let configuration = build_text(SETTINGS).expect("the device with setting groups builds");
+    let device = &configuration.model.devices()[0];
+    let node = device
+        .nodes()
+        .iter()
+        .find(|n| n.name().to_string() == "LLN0")
+        .expect("the node is served");
+    let layout = igs_iec61850_mms_core::model::layout::layout(
+        node,
+        igs_iec61850_mms_core::model::layout::IDENTIFIER_LIMIT,
+    )
+    .expect("the layout is built");
+    let names: Vec<&str> = layout.variables.iter().map(|v| v.name.as_str()).collect();
+    assert!(names.contains(&"LLN0$SG$MltLev$setVal"));
+    assert!(names.contains(&"LLN0$SE$MltLev$setVal"));
+    assert!(!names.iter().any(|name| name.contains("$SP$")));
+    // The declaration is kept: two setting groups, the first one active.
+    assert_eq!(
+        configuration.setting_groups,
+        [igs_iec61850_mms_core::scl::build::SettingGroups {
+            device: "LD1".to_string(),
+            num_of_sgs: 2,
+            active: 1,
+        }]
+    );
+}
+
+#[test]
+fn an_active_setting_group_outside_the_declared_ones_is_refused() {
+    // `actSG` is from one to `numOfSGs` (IEC 61850-6): the value three of two groups is refused.
+    let text = SETTINGS.replacen("actSG=\"1\"", "actSG=\"3\"", 1);
+    refused_with(
+        build_text(&text),
+        "SCL-003",
+        "the active setting group 3 is not within the 2 setting groups",
+    );
+}
