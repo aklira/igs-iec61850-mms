@@ -77,6 +77,10 @@ pub enum BufferedWrite {
     PurgeBuf,
     /// The entry to resynchronise to (the NULL identifier for the oldest one).
     EntryId(EntryId),
+    /// Reserve the block for this many seconds, kept after the loss of the association; zero releases it (`ResvTms`, 7-2 §17.2.2.17).
+    Reserve(u16),
+    /// Request a general interrogation (`GI`, figure 30): the block must be enabled.
+    GeneralInterrogation,
 }
 
 /// A decoded buffered report: the fields that its options select, and its entries.
@@ -381,6 +385,8 @@ impl IecClient {
             BufferedWrite::EntryId(id) => {
                 ("EntryID", Data::OctetString(id.0.to_be_bytes().to_vec()))
             }
+            BufferedWrite::Reserve(seconds) => ("ResvTms", Data::Integer(i128::from(seconds))),
+            BufferedWrite::GeneralInterrogation => ("GI", Data::Boolean(true)),
         };
         let item = component_item(device, &format!("{node}$BR${block}"), attribute)?;
         let mut results = self.write(&[(item, data)]).await?;

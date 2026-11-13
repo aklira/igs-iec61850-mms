@@ -13,7 +13,7 @@ statements` is open (task V1 stays unticked for that reason).
 | Data values: read and write of served attributes | Implemented (writes to controllable objects go through the control state machines); the attribute rows are in the register `docs/capabilities.md`, not yet in the source | MODEL-006 (updates); register rows for reads and writes |
 | Data sets: static and dynamic, persistent and association-specific | Implemented | DS-001, DS-002 |
 | Unbuffered reports (URCB): reservation, triggers, buffer time, integrity, general interrogation, layout | Implemented | RPT-001, RPT-002, RPT-003 |
-| Buffered reports (BRCB): history, purge, overflow, resynchronisation, delivery, segmentation | Implemented; no general interrogation and no reservation for buffered blocks | BRCB-001, BRCB-002, BRCB-003 |
+| Buffered reports (BRCB): history, purge, overflow, resynchronisation, delivery, segmentation | Implemented; general interrogation and reservation of buffered blocks (BRCB-004) | BRCB-001, BRCB-002, BRCB-003, BRCB-004 |
 | Controls: direct and select-before-operate, normal and enhanced security | Implemented; TimeActivatedOperate refused | CTL-001, CTL-002, CTL-003, CTL-004 |
 | Gateway (one runtime, mirrors, forwarded controls) | Implemented; no reconnection | GW-001, GW-003, GW-004 |
 | Editions: detection from the namespace; the causes of the first edition | Implemented; the other causes of the first edition are not known | ED1-001, ED1-004 |

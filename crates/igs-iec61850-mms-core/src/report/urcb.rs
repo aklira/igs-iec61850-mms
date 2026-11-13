@@ -192,6 +192,8 @@ pub enum Timer {
     BufferTime,
     /// The integrity period.
     Integrity,
+    /// The reservation kept after the association of its holder is lost (`ResvTms`, 7-2 §17.2.2.17); buffered blocks only.
+    Reservation,
 }
 
 /// An event for the block.
@@ -295,6 +297,8 @@ impl Urcb {
             Event::Notification { member, trigger } => self.notification(now, member, trigger),
             Event::Timer(Timer::BufferTime) => self.flush(now).into_iter().collect(),
             Event::Timer(Timer::Integrity) => self.integrity(now),
+            // The unbuffered block keeps no reservation after a loss, so it never arms this timer.
+            Event::Timer(Timer::Reservation) => Vec::new(),
             Event::AssociationLost(client) => self.lost(client),
         }
     }

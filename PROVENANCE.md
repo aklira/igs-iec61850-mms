@@ -1007,6 +1007,42 @@ silent, to be confirmed by an observation test against other implementations.
   `EntryTime`; `model/types.rs`, the resolution of each name; `tests/model.rs`, the refusal of `UsvcbTrk.dstAddress` and the served `BrcbTrk`
   with its entry fields at zero.
 
+### D-044 — General interrogation and reservation of the buffered block (task Q4; BRCB-004)
+
+- **Sources**: 7-2 §17.2.2.13 (`GI`), §17.2.2.17 (`ResvTms`), §17.2.2.18 (`Owner`), §17.2.3.2.3.4 (the GI service), and figure 30 (the
+  logical state machine of the general interrogation). The figure is missing from the prepared text (`docs/spec/7-2`, marked "transcribe
+  manually"); it was read from page 110 of the PDF (printed page 106), as D-024 did for the unbuffered block.
+- **General interrogation** (figure 30, 17.2.3.2.3.4):
+  - refused while the block is disabled (initial state NO GI ALLOWED): a negative response, nothing sent;
+  - while enabled, with `TrgOps.general-interrogation` on: the open buffer-time window is closed first, so that the buffered entries are
+    sent before the interrogation (the text says so); then one report of every member, with the reason general-interrogation;
+  - with the trigger off: a positive response, nothing sent;
+  - `GI` is not kept as a state: it is FALSE at once, as the figure has it.
+  - The report is **not an entry of the history** (the figure has no buffering step for it, only "queue" and "format" of the pending
+    information): its `EntryID` is the NULL identifier and it takes the next sequence number. Confidence medium; to confront with the
+    reference peer.
+  - Not done: the restart of an interrogation that is being sent in segments (the text says a new request stops the remaining segments).
+- **Reservation** (`ResvTms`, 17.2.2.17), `Write::ReserveTime(seconds)`:
+  - a free block is reserved for the writer; the holder changes its time; zero releases it; zero on a free block is a positive answer;
+  - another client is refused (`Reserved`, mapped to temporarily-unavailable, the same as the unbuffered block, D-024) for every write while
+    the block is reserved: enabling, configuration, `PurgeBuf`, `EntryID`, `GI`, and a reservation;
+  - when the association of the holder is lost, the reservation lasts the time the holder asked for (a timer, `Timer::Reservation`), and
+    then the block is free and `ResvTms` reads zero (17.2.2.17, the positive value). A holder that asked for no time has no reservation.
+  - A negative value is refused (`OBJECT_VALUE_INVALID`). The preconfigured value -1 (SCL `ClientLN`) is not supported: the SCL build still
+    refuses the report control, SCOPE-002.
+- **Enabling a free block does not need a prior reservation**: the text has the client reserve before configuring or enabling
+  (17.2.2.17). The unbuffered block refuses an enabling without its reservation (D-024). The buffered block does not, because the server
+  shall only keep other clients out while a block is reserved, and because the interoperability tests with the reference peer enable
+  without a reservation (B2). This asymmetry is deliberate; confidence medium.
+- **Owner**: the client that enables the block is its owner. Only the loss of the owner disables the block; before this task any loss did.
+  The holder of a reservation gets its loss even when it is not the owner, so that its reservation can run. `Owner` is still not served
+  (an empty value), since its value is an identifier that the SCSM defines (17.2.2.18).
+- **Segmentation**: the general-interrogation report goes through the same segmentation as the other reports (the server splits it).
+- **Tests**: `tests/report_buffered_reservation.rs` (10 tests with controlled time: the refusal while disabled, the report of every member,
+  the window closed first with the next sequence number, the trigger off, the exclusivity of a reservation, its release, the zero on a free
+  block, the reservation of a lost holder and its timer, a loss that changes nothing, and the loss of the owner), and two association tests in
+  `tests/buffered.rs` (a general interrogation to the owner; a reservation that refuses the enabling of another association).
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

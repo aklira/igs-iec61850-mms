@@ -29,7 +29,7 @@ What the library does (see [`docs/capabilities.tsv`](docs/capabilities.tsv) for 
 
 What it does not do yet (details in [`docs/capabilities.md`](docs/capabilities.md)):
 
-- buffered reports: no general interrogation and no reservation for buffered blocks;
+- buffered reports: the owner (`Owner`) is not served, and a general interrogation restarted while being sent is not restarted;
 - Edition 1 interoperability is not tested against a peer;
 - no SNTP or PTP; the host clock is used with its declared quality;
 - no arrays, logs, file services, setting groups, GOOSE or sampled values; declared services that are not executed are refused,

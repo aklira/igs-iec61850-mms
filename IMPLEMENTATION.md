@@ -618,7 +618,7 @@ The agent does not wait for these; it records the impact and continues with what
 | Q1 Double-point and tap-command basic types | [x] `Dbpos`, `Tcmd`, the trigger, option and entry types done, with an SCL breaker check (D-042, D-043, docs/ai-log/Q1.md); `PhyComAddr` stays refused by decision |
 | Q2 Classes with variants (setting groups) | [ ] |
 | Q3 Arrays and enumerations chosen by the instance | [ ] |
-| Q4 Buffered reports: general interrogation and reservation | [ ] |
+| Q4 Buffered reports: general interrogation and reservation | [ ] core, server and client done (D-044, docs/ai-log/Q4.md); bench row against the reference peer open |
 | Q5 Log services | [ ] |
 | Q6 File services | [ ] |
 | R1 Legal review and release ⛔ | [ ] |

@@ -341,3 +341,79 @@ async fn the_configuration_of_an_enabled_block_is_refused() {
     let _ = Duration::ZERO;
     let _ = setup.server;
 }
+
+#[tokio::test]
+async fn a_general_interrogation_reports_every_member_to_the_association_that_enabled_the_block() {
+    // The owner asks for a general interrogation (figure 30): one report of every member, with the reason general-interrogation.
+    let setup = start().await;
+    let (owner, mut events) = connect(&setup.address).await;
+    let steps = [
+        BufferedWrite::DataSet(Some("LLN0$DS1".to_string())),
+        BufferedWrite::OptFields(fields()),
+        BufferedWrite::TriggerOptions(TriggerOptions {
+            data_change: true,
+            general_interrogation: true,
+            ..Default::default()
+        }),
+        BufferedWrite::BufTm(0),
+        BufferedWrite::IntgPd(0),
+        BufferedWrite::Enable(true),
+    ];
+    for step in steps {
+        owner
+            .buffered_write("LD1", "LLN0", BLOCK, step)
+            .await
+            .expect("the write is answered")
+            .expect("the write is accepted");
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    owner
+        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::GeneralInterrogation)
+        .await
+        .expect("the request is answered")
+        .expect("the request is accepted");
+    let report = report_within(&mut events, Duration::from_secs(5))
+        .await
+        .expect("the owner receives the general-interrogation report");
+    assert_eq!(report.rpt_id, BLOCK);
+    assert!(!report.entries.is_empty(), "every member is reported");
+    for entry in &report.entries {
+        assert_eq!(entry.reasons, vec![Reason::GeneralInterrogation]);
+    }
+}
+
+#[tokio::test]
+async fn a_reservation_by_one_association_refuses_the_enabling_of_another() {
+    // A reserved block takes no write from another association (7-2 §17.2.2.17); the holder releases it.
+    let setup = start().await;
+    let (holder, _holder_events) = connect(&setup.address).await;
+    let (other, _other_events) = connect(&setup.address).await;
+    holder
+        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::Reserve(60))
+        .await
+        .expect("the reservation is answered")
+        .expect("the reservation is granted");
+    let refused = other
+        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::Enable(true))
+        .await
+        .expect("the write is answered");
+    assert!(
+        refused.is_err(),
+        "another association is refused while reserved"
+    );
+    holder
+        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::Reserve(0))
+        .await
+        .expect("the release is answered")
+        .expect("the release is accepted");
+    other
+        .buffered_write(
+            "LD1",
+            "LLN0",
+            BLOCK,
+            BufferedWrite::DataSet(Some("LLN0$DS1".to_string())),
+        )
+        .await
+        .expect("the write is answered")
+        .expect("the free block is written by another association");
+}

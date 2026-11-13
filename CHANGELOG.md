@@ -16,6 +16,9 @@ All notable changes to this project are recorded in this file. The format follow
 - The trigger conditions, the report and the sampled value options (bit strings of their minimum size), the entry identifier and
   the entry time are served (8-1 §8.1.3.5, §8.1.3.8, §8.1.3.9, §8.1.3.13, §8.1.3.15). The tracking objects of the reports, logs and
   setting groups are served; the GOOSE and sampled value tracking, which holds a destination address, stays refused.
+- Buffered reports: the general interrogation (`GI`, figure 30) sends the buffered entries first, then every member once; the
+  reservation (`ResvTms`, 7-2 §17.2.2.17) keeps other clients out while it holds, and for its time after the loss of its holder.
+  Only the loss of the owner disables a buffered block now.
 
 ### Added
 

@@ -15,9 +15,9 @@
 //! is full the oldest entry is discarded, and an entry that was not yet sent makes the next report carry `BufOvfl` (§17.2.3.2.2.8).
 //! The rules and the decisions where the text is open are in `PROVENANCE.md` (D-037).
 //!
-//! Not in this release: the reservation and the owner of the block (`ResvTms`, `Owner`), the general interrogation, the segmentation of
-//! the integrity and general-interrogation snapshots, and the MMS encoding of the entries (task B2). The sequence number is 16 bits
-//! (table 70, `SqNum` INT16U).
+//! The reservation (`ResvTms`, §17.2.2.17) and the general interrogation (`GI`, figure 30) are in task Q4 (D-044). Not in this release:
+//! the owner of the block (`Owner`), the restart of a general interrogation that is being sent, and the MMS encoding of the entries (task B2).
+//! The sequence number is 16 bits (table 70, `SqNum` INT16U).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::Duration;
@@ -131,6 +131,11 @@ pub enum Write {
     PurgeBuf,
     /// `EntryID`: the entry to resynchronise to (the NULL identifier for the oldest one). Refused while enabled.
     EntryId(EntryId),
+    /// `ResvTms`: the reservation of the writer for this many seconds, kept after the loss of its association; zero releases it
+    /// (§17.2.2.17).
+    ReserveTime(u16),
+    /// `GI`: the request of a general interrogation (figure 30).
+    GeneralInterrogation,
 }
 
 /// Why a write is refused.
@@ -149,6 +154,10 @@ pub enum Refusal {
         /// The state before the write.
         from: State,
     },
+    /// The block is reserved by another client: no other client writes it (§17.2.2.17).
+    Reserved,
+    /// A general interrogation is refused while the block is disabled (figure 30: NO GI ALLOWED).
+    GeneralInterrogationNotAllowed,
 }
 
 /// Events for the block.
@@ -251,6 +260,11 @@ pub struct Brcb {
     window: Option<Window>,
     /// The time of the next integrity entry, when the integrity period is set.
     integrity_due: Option<Duration>,
+    /// The client that holds the reservation (`ResvTms`), and the time it asked for in seconds.
+    reserved_by: Option<ClientId>,
+    reserve_time: u16,
+    /// The client that enabled the block (`Owner`): its association loss disables the block.
+    owner: Option<ClientId>,
 }
 
 impl Brcb {
@@ -268,6 +282,9 @@ impl Brcb {
             last_formatted: EntryId::NULL,
             window: None,
             integrity_due: None,
+            reserved_by: None,
+            reserve_time: 0,
+            owner: None,
         }
     }
 
@@ -315,22 +332,46 @@ impl Brcb {
     /// Handles an event at the given time, and returns the actions to take.
     pub fn handle(&mut self, now: Duration, event: Event) -> Vec<Action> {
         match event {
-            Event::Request { client: _, write } => self.request(now, write),
+            Event::Request { client, write } => self.request(now, client, write),
             Event::Notification { member, trigger } => self.notification(now, member, trigger),
             Event::Timer(Timer::BufferTime) => self.buffer_timer(now),
             Event::Timer(Timer::Integrity) => self.integrity(now),
-            Event::AssociationLost(_) => {
-                self.state = State::Disabled;
-                Vec::new()
+            Event::Timer(Timer::Reservation) => self.expire_reservation(),
+            Event::AssociationLost(client) => {
+                // Only the client that enabled the block stops its reports; the reservation is handled for any client.
+                if self.owner == Some(client) {
+                    self.state = State::Disabled;
+                    self.owner = None;
+                }
+                self.lost(now, client)
             }
         }
     }
 
-    fn request(&mut self, now: Duration, write: Write) -> Vec<Action> {
+    /// The client that holds the reservation (`ResvTms`), if any. A holder whose association is lost keeps it for `ResvTms` seconds.
+    pub fn reserved_by(&self) -> Option<ClientId> {
+        self.reserved_by
+    }
+
+    /// The reservation time of the block (`ResvTms`) in seconds: the time the holder asked for, or zero when the block is free.
+    pub fn reserve_time(&self) -> u16 {
+        self.reserve_time
+    }
+
+    fn request(&mut self, now: Duration, client: ClientId, write: Write) -> Vec<Action> {
+        if let Write::ReserveTime(seconds) = write {
+            return self.reserve(client, seconds);
+        }
+        // While a block is reserved, no other client writes it (§17.2.2.17).
+        if self.reserved_by.is_some_and(|holder| holder != client) {
+            return respond(Err(Refusal::Reserved));
+        }
         match write {
-            Write::RptEna(true) => self.enable(now),
+            Write::GeneralInterrogation => self.general_interrogation(now),
+            Write::RptEna(true) => self.enable(now, client),
             Write::RptEna(false) => {
                 self.state = State::Disabled;
+                self.owner = None;
                 respond(Ok(()))
             }
             Write::EntryId(id) => self.resynchronise(id),
@@ -346,7 +387,7 @@ impl Brcb {
 
     /// `RptEna` = TRUE: from `disabled` the reports start with the oldest entry, and the first one carries `BufOvfl` (the block is
     /// not resynchronised, §17.2.3.2.2.8); from `resync` they start after the entry the client set.
-    fn enable(&mut self, now: Duration) -> Vec<Action> {
+    fn enable(&mut self, now: Duration, client: ClientId) -> Vec<Action> {
         if self.state == State::Enabled {
             return respond(Ok(()));
         }
@@ -362,6 +403,7 @@ impl Brcb {
             self.overflow = true;
         }
         self.state = State::Enabled;
+        self.owner = Some(client);
         self.sequence = 0;
         let mut actions = respond(Ok(()));
         actions.extend(self.transmit(now));
@@ -439,7 +481,11 @@ impl Brcb {
                 changed
             }
             // Handled by `request`; these are not configuration.
-            Write::RptEna(_) | Write::EntryId(_) | Write::PurgeBuf => false,
+            Write::RptEna(_)
+            | Write::EntryId(_)
+            | Write::PurgeBuf
+            | Write::ReserveTime(_)
+            | Write::GeneralInterrogation => false,
         };
         let mut actions = Vec::new();
         if changed {
@@ -450,6 +496,92 @@ impl Brcb {
         }
         actions.extend(respond(Ok(())));
         actions
+    }
+
+    /// `ResvTms` (§17.2.2.17): a free block is reserved for the writer, the holder changes its time, and zero releases the block
+    /// (a release of a free block is a positive answer). Another client is refused while the block is reserved.
+    fn reserve(&mut self, client: ClientId, seconds: u16) -> Vec<Action> {
+        if self.reserved_by.is_some_and(|holder| holder != client) {
+            return respond(Err(Refusal::Reserved));
+        }
+        let mut actions = Vec::new();
+        // A holder that writes again has its association: a reservation kept after a loss is not needed any more.
+        if self.reserved_by.is_some() {
+            actions.push(Action::Disarm(Timer::Reservation));
+        }
+        if seconds == 0 {
+            self.reserved_by = None;
+            self.reserve_time = 0;
+        } else {
+            self.reserved_by = Some(client);
+            self.reserve_time = seconds;
+        }
+        actions.extend(respond(Ok(())));
+        actions
+    }
+
+    /// The association of a client is lost. A holder that asked for a time keeps the reservation for that many seconds (the timer
+    /// releases it, `expire_reservation`); a holder that asked for none loses it at once.
+    fn lost(&mut self, now: Duration, client: ClientId) -> Vec<Action> {
+        if self.reserved_by != Some(client) {
+            return Vec::new();
+        }
+        if self.reserve_time == 0 {
+            self.reserved_by = None;
+            return Vec::new();
+        }
+        let at = now.saturating_add(Duration::from_secs(u64::from(self.reserve_time)));
+        vec![Action::Arm {
+            timer: Timer::Reservation,
+            at,
+        }]
+    }
+
+    /// The reservation timer expired: the block is free, and `ResvTms` reads zero (§17.2.2.17).
+    fn expire_reservation(&mut self) -> Vec<Action> {
+        self.reserved_by = None;
+        self.reserve_time = 0;
+        Vec::new()
+    }
+
+    /// `GI` TRUE (figure 30). Refused while the block is disabled. While enabled, with the general-interrogation trigger on, the
+    /// buffered entries are sent first (the open window is closed), then one report of all the members with the reason
+    /// general-interrogation. That report is not an entry of the history, so its `EntryID` is the NULL identifier.
+    fn general_interrogation(&mut self, now: Duration) -> Vec<Action> {
+        if self.state != State::Enabled {
+            return respond(Err(Refusal::GeneralInterrogationNotAllowed));
+        }
+        let mut actions = Vec::new();
+        if self.config.trg_ops.general_interrogation {
+            actions.extend(self.close_window(now));
+            actions.extend(self.general_report(now));
+        }
+        actions.extend(respond(Ok(())));
+        actions
+    }
+
+    /// The general-interrogation report: every member, with its reason, and the next sequence number.
+    fn general_report(&mut self, now: Duration) -> Vec<Action> {
+        let Some(count) = self.member_count() else {
+            return Vec::new();
+        };
+        let entries: Vec<Entry> = (0..count)
+            .map(|member| Entry {
+                member,
+                reasons: BTreeSet::from([Reason::GeneralInterrogation]),
+            })
+            .collect();
+        let sequence = self.sequence;
+        self.sequence = self.sequence.wrapping_add(1);
+        vec![Action::Report(BufferedReport {
+            at: now,
+            sequence,
+            entry_id: EntryId::NULL,
+            time_of_entry: now,
+            buf_ovfl: false,
+            kind: ReportKind::GeneralInterrogation,
+            entries,
+        })]
     }
 
     /// `PurgeBuf`: the history, the open window and the overflow are discarded; the next entry starts a new history.

@@ -41,7 +41,7 @@ use crate::reports::{
 };
 
 /// The attributes of a buffered block, in the order of its structure (7-2 table 70).
-const BUFFERED_ATTRIBUTES: [&str; 14] = [
+const BUFFERED_ATTRIBUTES: [&str; 15] = [
     "RptID",
     "RptEna",
     "DatSet",
@@ -55,6 +55,7 @@ const BUFFERED_ATTRIBUTES: [&str; 14] = [
     "PurgeBuf",
     "EntryID",
     "TimeOfEntry",
+    "ResvTms",
     "Owner",
 ];
 
@@ -193,15 +194,17 @@ impl BufferedBlock {
         }
     }
 
-    /// The association was lost: the block is disabled, and it keeps its history.
+    /// The association was lost: the owner's loss disables the block and keeps its history; the holder of a reservation keeps the
+    /// reservation for its time (§17.2.2.17).
     pub(crate) fn released(
         &mut self,
         now: Duration,
         peer: PeerId,
         outbox: &mut VecDeque<Outbound>,
     ) {
-        if self.owner == Some(peer) {
-            self.event(now, Event::AssociationLost(ClientId(peer.0)), outbox);
+        let client = ClientId(peer.0);
+        if self.owner == Some(peer) || self.brcb.reserved_by() == Some(client) {
+            self.event(now, Event::AssociationLost(client), outbox);
         }
     }
 
@@ -371,6 +374,7 @@ impl BufferedBlock {
                     .map_or(Duration::ZERO, |kept| kept.time_of_entry),
             )),
             "PurgeBuf" | "GI" => Data::Boolean(false),
+            "ResvTms" => Data::Integer(i128::from(self.brcb.reserve_time())),
             "Owner" => Data::OctetString(Vec::new()),
             _ => return AccessResult::Failure(DataAccessError::OBJECT_NON_EXISTENT),
         };
@@ -412,12 +416,22 @@ impl BufferedBlock {
                     }
                 }
             }
-            ("GI" | "SqNum" | "TimeOfEntry" | "Owner" | "ConfRev", _) => {
+            // `GI` FALSE is a positive answer that changes nothing (the attribute is set back to FALSE at once, figure 30).
+            ("GI", Data::Boolean(true)) => Write::GeneralInterrogation,
+            ("GI", Data::Boolean(false)) => return WriteResponseItemItem::Success,
+            ("ResvTms", Data::Integer(seconds)) => match u16::try_from(*seconds) {
+                Ok(seconds) => Write::ReserveTime(seconds),
+                // A negative time is not a reservation; the preconfigured value -1 is not written by a client.
+                Err(_) => {
+                    return WriteResponseItemItem::Failure(DataAccessError::OBJECT_VALUE_INVALID)
+                }
+            },
+            ("SqNum" | "TimeOfEntry" | "Owner" | "ConfRev", _) => {
                 return WriteResponseItemItem::Failure(DataAccessError::OBJECT_ACCESS_DENIED)
             }
             (
                 "RptID" | "RptEna" | "DatSet" | "OptFlds" | "BufTm" | "TrgOps" | "IntgPd"
-                | "PurgeBuf" | "EntryID",
+                | "PurgeBuf" | "EntryID" | "GI" | "ResvTms",
                 _,
             ) => return WriteResponseItemItem::Failure(DataAccessError::TYPE_INCONSISTENT),
             _ => return WriteResponseItemItem::Failure(DataAccessError::OBJECT_NON_EXISTENT),
@@ -436,6 +450,8 @@ fn refusal_error(refusal: Refusal) -> DataAccessError {
         Refusal::DataSetNull | Refusal::UnknownDataSet | Refusal::EntryNotInQueue { .. } => {
             DataAccessError::OBJECT_VALUE_INVALID
         }
+        // Another client holds the reservation (the same answer as the unbuffered block).
+        Refusal::Reserved => DataAccessError::TEMPORARILY_UNAVAILABLE,
         #[allow(unreachable_patterns)]
         _ => DataAccessError::OBJECT_ACCESS_DENIED,
     }
