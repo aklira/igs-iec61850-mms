@@ -1,0 +1,80 @@
+# SPDX-FileCopyrightText: 2026 The igs-iec61850-mms contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# Publication to crates.io on a version tag (R1, the owner's gate). A tag `vX.Y.Z` must match the version of both library crates.
+# The quality gate runs first; then the core crate is published, then the client and server crate once the core is in the index.
+#
+# Prerequisites (not met by the repository yet, see docs/ai-log/R1.md):
+# - the igs-iso9506-mms crates that the library depends on must be published on crates.io at the version the manifests name;
+# - the `path` dependencies on the sibling repository must be removed, or that repository checked out here, for the build to resolve;
+# - the repository secret CARGO_REGISTRY_TOKEN must hold a crates.io token with publish rights for these two crates.
+
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Optional: attach an environment with required reviewers in the repository settings, to keep a human approval before publication.
+    environment: crates-io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: The tag matches the versions of the two library crates
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for manifest in crates/igs-iec61850-mms-core/Cargo.toml crates/igs-iec61850-mms/Cargo.toml; do
+            version=$(grep -m1 '^version' "$manifest" | cut -d'"' -f2)
+            if [ "$version" != "$tag" ]; then
+              echo "the tag $GITHUB_REF_NAME does not match $manifest (version $version)"
+              exit 1
+            fi
+          done
+
+      - name: Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Quality gate
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-features
+          cargo deny check
+
+      - name: Dry run of the publication
+        run: cargo publish --dry-run -p igs-iec61850-mms-core
+
+      - name: Publish the core crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p igs-iec61850-mms-core
+
+      - name: Publish the client and server crate (waits for the core crate in the index)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if cargo publish -p igs-iec61850-mms; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; waiting for the index"
+            sleep 30
+          done
+          exit 1
