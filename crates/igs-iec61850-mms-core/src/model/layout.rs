@@ -20,8 +20,8 @@
 //! Each enumeration inside a variable says which values it defines (8-1 §8.1.3.4.4.2).
 
 use igs_iso9506_mms_codec::mms::{
-    Data, DataMMSString, FloatingPoint, Identifier, TypeDescription, TypeDescriptionStructure,
-    TypeDescriptionStructureComponentsItem, TypeSpecification, UtcTime,
+    Data, DataMMSString, FloatingPoint, Identifier, TimeOfDay, TypeDescription,
+    TypeDescriptionStructure, TypeDescriptionStructureComponentsItem, TypeSpecification, UtcTime,
 };
 use igs_iso9506_mms_codec::schema::BitString as BitStringValue;
 
@@ -120,10 +120,19 @@ pub fn default_value(ty: &TypeDescription) -> Option<Data> {
                 bytes: vec![0u8; bytes],
             })
         }
-        TypeDescription::OctetString(_) => Data::OctetString(Vec::new()),
+        // Zero octets of the size: a conforming value, and the reserved value of an EntryID (8-1 §8.1.3.5).
+        TypeDescription::OctetString(size) => {
+            Data::OctetString(vec![0u8; usize::try_from(size.0).ok()?])
+        }
         TypeDescription::VisibleString(_) => Data::VisibleString(String::new()),
         TypeDescription::MMSString(_) => Data::MMSString(DataMMSString(String::new())),
         TypeDescription::UtcTime => Data::UtcTime(UtcTime(vec![0u8; 8])),
+        // The zero time of day: the six-octet form (`true`) carries the day, the four-octet form does not.
+        TypeDescription::BinaryTime(six_octets) => Data::BinaryTime(if *six_octets {
+            TimeOfDay::from_milliseconds_and_day(0, 0).ok()?
+        } else {
+            TimeOfDay::from_milliseconds(0).ok()?
+        }),
         _ => return None,
     })
 }

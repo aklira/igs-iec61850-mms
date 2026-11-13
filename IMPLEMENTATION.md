@@ -615,7 +615,7 @@ The agent does not wait for these; it records the impact and continues with what
 | V1 Capability statements | [x] |
 | V2 Documentation, examples, binaries | [x] |
 | V3 Robustness and performance evidence | [x] |
-| Q1 Double-point and tap-command basic types | [ ] `Dbpos` and `Tcmd` done, with an SCL breaker check (D-042, docs/ai-log/Q1.md); the other basic types stay open |
+| Q1 Double-point and tap-command basic types | [x] `Dbpos`, `Tcmd`, the trigger, option and entry types done, with an SCL breaker check (D-042, D-043, docs/ai-log/Q1.md); `PhyComAddr` stays refused by decision |
 | Q2 Classes with variants (setting groups) | [ ] |
 | Q3 Arrays and enumerations chosen by the instance | [ ] |
 | Q4 Buffered reports: general interrogation and reservation | [ ] |

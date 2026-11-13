@@ -22,8 +22,8 @@
 use std::fmt;
 
 use igs_iso9506_mms_codec::mms::{
-    Data, DataMMSString, FloatingPoint, Integer32, TypeDescription, TypeDescriptionFloatingPoint,
-    Unsigned8, UtcTime, UtcTimestamp,
+    Data, DataMMSString, FloatingPoint, Integer32, TimeOfDay, TypeDescription,
+    TypeDescriptionFloatingPoint, Unsigned8, UtcTime, UtcTimestamp,
 };
 use igs_iso9506_mms_codec::schema::BitString;
 
@@ -965,6 +965,259 @@ pub fn step_command_from_data(data: &Data) -> Result<StepCommand, AcsiError> {
     })
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Entries, trigger options and option fields (8-1 §8.1.3.5, §8.1.3.8, §8.1.3.9, §8.1.3.13, §8.1.3.15)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The size in octets of an `EntryID` (§8.1.3.5): a fixed octet string.
+pub const ENTRY_ID_OCTETS: usize = 8;
+
+/// An `EntryID`: the handle of an entry of a log or a buffered report. The reserved value is eight zero octets.
+pub type EntryId = [u8; ENTRY_ID_OCTETS];
+
+/// An `EntryID` as an MMS octet string of eight octets.
+pub fn entry_id_to_data(id: &EntryId) -> Data {
+    Data::OctetString(id.to_vec())
+}
+
+/// Reads an `EntryID`: exactly eight octets. Any other length is refused.
+pub fn entry_id_from_data(data: &Data) -> Result<EntryId, AcsiError> {
+    let Data::OctetString(bytes) = data else {
+        return Err(AcsiError::WrongType {
+            ty: "EntryID",
+            expected: "octet-string",
+        });
+    };
+    <EntryId>::try_from(bytes.as_slice()).map_err(|_| AcsiError::InvalidValue {
+        ty: "EntryID",
+        why: "eight octets are expected",
+    })
+}
+
+/// An `EntryTime` (§8.1.3.8): the milliseconds since midnight and the day since 1 January 1984, in the six-octet
+/// TimeOfDay. The NULL entry time has both fields at zero (7-2 §6.2.3.11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntryTime {
+    /// Milliseconds since midnight.
+    pub milliseconds: u32,
+    /// Days since 1 January 1984 (day 0).
+    pub day: u16,
+}
+
+/// An `EntryTime` as an MMS TimeOfDay of six octets.
+pub fn entry_time_to_data(time: EntryTime) -> Result<Data, AcsiError> {
+    TimeOfDay::from_milliseconds_and_day(time.milliseconds, time.day)
+        .map(Data::BinaryTime)
+        .map_err(|_| AcsiError::InvalidValue {
+            ty: "EntryTime",
+            why: "the milliseconds are out of the range of a time of day",
+        })
+}
+
+/// Reads an `EntryTime`. The four-octet form of TimeOfDay has no date and is refused: an entry time has a day.
+pub fn entry_time_from_data(data: &Data) -> Result<EntryTime, AcsiError> {
+    let Data::BinaryTime(time) = data else {
+        return Err(AcsiError::WrongType {
+            ty: "EntryTime",
+            expected: "binary-time",
+        });
+    };
+    let invalid = |why| AcsiError::InvalidValue {
+        ty: "EntryTime",
+        why,
+    };
+    let milliseconds = time
+        .milliseconds()
+        .map_err(|_| invalid("the milliseconds are not a time of day"))?;
+    let day = time
+        .day()
+        .map_err(|_| invalid("the day is not a time of day"))?
+        .ok_or_else(|| invalid("the six-octet form, with the day, is expected"))?;
+    Ok(EntryTime { milliseconds, day })
+}
+
+/// The trigger conditions of a block (8-1 §8.1.3.9, Table 37). Bit 0 is reserved.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TriggerOptions {
+    /// Bit 1: data-change.
+    pub data_change: bool,
+    /// Bit 2: quality-change.
+    pub quality_change: bool,
+    /// Bit 3: data-update.
+    pub data_update: bool,
+    /// Bit 4: integrity.
+    pub integrity: bool,
+    /// Bit 5: general-interrogation.
+    pub general_interrogation: bool,
+}
+
+/// The trigger conditions as an MMS bit string of six bits (the minimum size of the standard).
+pub fn trigger_options_to_data(options: TriggerOptions) -> Data {
+    flags_to_bits(&[
+        false,
+        options.data_change,
+        options.quality_change,
+        options.data_update,
+        options.integrity,
+        options.general_interrogation,
+    ])
+}
+
+/// Reads the trigger conditions. The bits past the six of the minimum are ignored, the missing ones are zero.
+pub fn trigger_options_from_data(data: &Data) -> Result<TriggerOptions, AcsiError> {
+    let flags = bits_to_flags(data, "TriggerConditions", TRIGGER_OPTIONS_BITS)?;
+    Ok(TriggerOptions {
+        data_change: flag(&flags, 1),
+        quality_change: flag(&flags, 2),
+        data_update: flag(&flags, 3),
+        integrity: flag(&flags, 4),
+        general_interrogation: flag(&flags, 5),
+    })
+}
+
+/// The minimum size of the trigger conditions in bits (§8.1.3.9).
+const TRIGGER_OPTIONS_BITS: usize = 6;
+
+/// The optional fields of a report (8-1 §8.1.3.13, Table 41, the type `OptFlds`). Bit 0 is reserved.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReportOptions {
+    /// Bit 1: sequence-number.
+    pub sequence_number: bool,
+    /// Bit 2: report-time-stamp.
+    pub report_time_stamp: bool,
+    /// Bit 3: reason-for-inclusion.
+    pub reason_for_inclusion: bool,
+    /// Bit 4: data-set-name.
+    pub data_set_name: bool,
+    /// Bit 5: data-reference.
+    pub data_reference: bool,
+    /// Bit 6: buffer-overflow.
+    pub buffer_overflow: bool,
+    /// Bit 7: entryID.
+    pub entry_id: bool,
+    /// Bit 8: conf-revision.
+    pub conf_revision: bool,
+    /// Bit 9: segmentation.
+    pub segmentation: bool,
+}
+
+/// The minimum size of the report options in bits (§8.1.3.13).
+const REPORT_OPTIONS_BITS: usize = 10;
+
+/// The report options as an MMS bit string of ten bits (the minimum size of the standard).
+pub fn report_options_to_data(options: ReportOptions) -> Data {
+    flags_to_bits(&[
+        false,
+        options.sequence_number,
+        options.report_time_stamp,
+        options.reason_for_inclusion,
+        options.data_set_name,
+        options.data_reference,
+        options.buffer_overflow,
+        options.entry_id,
+        options.conf_revision,
+        options.segmentation,
+    ])
+}
+
+/// Reads the report options. The bits past the ten of the minimum are ignored, the missing ones are zero.
+pub fn report_options_from_data(data: &Data) -> Result<ReportOptions, AcsiError> {
+    let flags = bits_to_flags(data, "RCBReportOptions", REPORT_OPTIONS_BITS)?;
+    Ok(ReportOptions {
+        sequence_number: flag(&flags, 1),
+        report_time_stamp: flag(&flags, 2),
+        reason_for_inclusion: flag(&flags, 3),
+        data_set_name: flag(&flags, 4),
+        data_reference: flag(&flags, 5),
+        buffer_overflow: flag(&flags, 6),
+        entry_id: flag(&flags, 7),
+        conf_revision: flag(&flags, 8),
+        segmentation: flag(&flags, 9),
+    })
+}
+
+/// The optional fields of a sampled value message (8-1 §8.1.3.15, Table 42, the type `SvOptFlds`). Bit 1 is
+/// reserved.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SvOptions {
+    /// Bit 0: refresh-time.
+    pub refresh_time: bool,
+    /// Bit 2: sample-rate.
+    pub sample_rate: bool,
+    /// Bit 3: data-set-name.
+    pub data_set_name: bool,
+    /// Bit 4: security.
+    pub security: bool,
+    /// Bit 5: sample-mode.
+    pub sample_mode: bool,
+    /// Bit 6: synch-source-identity.
+    pub synch_source_identity: bool,
+}
+
+/// The minimum size of the sampled value options in bits (§8.1.3.15).
+const SV_OPTIONS_BITS: usize = 7;
+
+/// The sampled value options as an MMS bit string of seven bits (the minimum size of the standard).
+pub fn sv_options_to_data(options: SvOptions) -> Data {
+    flags_to_bits(&[
+        options.refresh_time,
+        false,
+        options.sample_rate,
+        options.data_set_name,
+        options.security,
+        options.sample_mode,
+        options.synch_source_identity,
+    ])
+}
+
+/// Reads the sampled value options. The bits past the seven of the minimum are ignored, the missing ones are zero.
+pub fn sv_options_from_data(data: &Data) -> Result<SvOptions, AcsiError> {
+    let flags = bits_to_flags(data, "SVMessageOptions", SV_OPTIONS_BITS)?;
+    Ok(SvOptions {
+        refresh_time: flag(&flags, 0),
+        sample_rate: flag(&flags, 2),
+        data_set_name: flag(&flags, 3),
+        security: flag(&flags, 4),
+        sample_mode: flag(&flags, 5),
+        synch_source_identity: flag(&flags, 6),
+    })
+}
+
+/// The flag at an index of a list of flags; a missing flag is false.
+fn flag(flags: &[bool], index: usize) -> bool {
+    flags.get(index).copied().unwrap_or(false)
+}
+
+/// The type description of a bit string of `size` bits (§8.1.2.1).
+pub fn describe_bit_string(size: u8) -> TypeDescription {
+    TypeDescription::BitString(Integer32(i64::from(size)))
+}
+
+/// The type description of `TriggerConditions`: a bit string of six bits, the minimum size (§8.1.3.9).
+pub fn describe_trigger_options() -> TypeDescription {
+    describe_bit_string(6)
+}
+
+/// The type description of `RCBReportOptions` (`OptFlds`): a bit string of ten bits, the minimum size (§8.1.3.13).
+pub fn describe_report_options() -> TypeDescription {
+    describe_bit_string(10)
+}
+
+/// The type description of `SVMessageOptions` (`SvOptFlds`): a bit string of seven bits, the minimum size (§8.1.3.15).
+pub fn describe_sv_options() -> TypeDescription {
+    describe_bit_string(7)
+}
+
+/// The type description of an `EntryID`: an octet string of eight octets (§8.1.3.5).
+pub fn describe_entry_id() -> TypeDescription {
+    TypeDescription::OctetString(Integer32(8))
+}
+
+/// The type description of an `EntryTime`: the six-octet TimeOfDay (`true`, §8.1.3.8).
+pub fn describe_entry_time() -> TypeDescription {
+    TypeDescription::BinaryTime(true)
+}
+
 /// The type description of an octet string of at most `max` octets.
 pub fn describe_octets(max: i64) -> TypeDescription {
     TypeDescription::OctetString(Integer32(max))
@@ -1273,6 +1526,160 @@ mod tests {
             bytes: vec![0b0111_1111],
         });
         assert_eq!(step_command_from_data(&data), Ok(StepCommand::Lower));
+    }
+
+    #[test]
+    fn trigger_options_are_six_bits_with_the_positions_of_table_37() {
+        let none = TriggerOptions::default();
+        assert_eq!(
+            trigger_options_to_data(none),
+            Data::BitString(BitString {
+                unused: 2,
+                bytes: vec![0x00]
+            })
+        );
+        let general = TriggerOptions {
+            general_interrogation: true,
+            ..TriggerOptions::default()
+        };
+        assert_eq!(
+            trigger_options_to_data(general),
+            Data::BitString(BitString {
+                unused: 2,
+                bytes: vec![0x04]
+            })
+        );
+        let change = TriggerOptions {
+            data_change: true,
+            ..TriggerOptions::default()
+        };
+        assert_eq!(
+            trigger_options_to_data(change),
+            Data::BitString(BitString {
+                unused: 2,
+                bytes: vec![0x40]
+            })
+        );
+        assert_eq!(
+            trigger_options_from_data(&trigger_options_to_data(general)),
+            Ok(general)
+        );
+        // Bits past the six are ignored; bit 5 is general-interrogation.
+        let long = Data::BitString(BitString {
+            unused: 0,
+            bytes: vec![0b0000_0111],
+        });
+        assert_eq!(trigger_options_from_data(&long), Ok(general));
+        // A shorter string takes zero for the missing bits.
+        let short = Data::BitString(BitString {
+            unused: 4,
+            bytes: vec![0b0100_0000],
+        });
+        assert_eq!(trigger_options_from_data(&short), Ok(change));
+        assert_eq!(describe_trigger_options(), describe_bit_string(6));
+    }
+
+    #[test]
+    fn report_options_are_ten_bits_and_sampled_value_options_seven() {
+        // The segmentation is bit 9: the second octet, second bit.
+        let segmentation = ReportOptions {
+            segmentation: true,
+            ..ReportOptions::default()
+        };
+        assert_eq!(
+            report_options_to_data(segmentation),
+            Data::BitString(BitString {
+                unused: 6,
+                bytes: vec![0x00, 0x40]
+            })
+        );
+        // The entryID is bit 7: the first octet, last bit.
+        let entry = ReportOptions {
+            entry_id: true,
+            ..ReportOptions::default()
+        };
+        assert_eq!(
+            report_options_to_data(entry),
+            Data::BitString(BitString {
+                unused: 6,
+                bytes: vec![0x01, 0x00]
+            })
+        );
+        assert_eq!(
+            report_options_from_data(&report_options_to_data(entry)),
+            Ok(entry)
+        );
+        // The refresh-time of the sampled values is bit 0, the synch-source-identity bit 6.
+        let refresh = SvOptions {
+            refresh_time: true,
+            ..SvOptions::default()
+        };
+        assert_eq!(
+            sv_options_to_data(refresh),
+            Data::BitString(BitString {
+                unused: 1,
+                bytes: vec![0x80]
+            })
+        );
+        let synch = SvOptions {
+            synch_source_identity: true,
+            ..SvOptions::default()
+        };
+        assert_eq!(sv_options_from_data(&sv_options_to_data(synch)), Ok(synch));
+        assert_eq!(describe_report_options(), describe_bit_string(10));
+        assert_eq!(describe_sv_options(), describe_bit_string(7));
+    }
+
+    #[test]
+    fn an_entry_id_is_eight_octets_and_any_other_length_is_refused() {
+        let id: EntryId = [1, 2, 3, 4, 5, 6, 7, 8];
+        assert_eq!(
+            entry_id_to_data(&id),
+            Data::OctetString(vec![1, 2, 3, 4, 5, 6, 7, 8])
+        );
+        assert_eq!(entry_id_from_data(&entry_id_to_data(&id)), Ok(id));
+        assert!(matches!(
+            entry_id_from_data(&Data::OctetString(vec![1; 7])),
+            Err(AcsiError::InvalidValue { .. })
+        ));
+        assert!(matches!(
+            entry_id_from_data(&Data::OctetString(vec![1; 9])),
+            Err(AcsiError::InvalidValue { .. })
+        ));
+        assert!(matches!(
+            entry_id_from_data(&Data::Integer(1)),
+            Err(AcsiError::WrongType { .. })
+        ));
+        assert_eq!(
+            describe_entry_id(),
+            TypeDescription::OctetString(Integer32(ENTRY_ID_OCTETS as i64))
+        );
+    }
+
+    #[test]
+    fn an_entry_time_is_the_six_octet_time_of_day_with_its_day() {
+        let time = EntryTime {
+            milliseconds: 3_600_000,
+            day: 5,
+        };
+        let data = entry_time_to_data(time).unwrap();
+        assert_eq!(entry_time_from_data(&data), Ok(time));
+        // The NULL entry time is zero in every field.
+        let null = EntryTime {
+            milliseconds: 0,
+            day: 0,
+        };
+        assert_eq!(
+            entry_time_from_data(&entry_time_to_data(null).unwrap()),
+            Ok(null)
+        );
+        // The four-octet form has no day and is refused for an entry time.
+        let four = Data::BinaryTime(TimeOfDay::from_milliseconds(1000).unwrap());
+        assert!(matches!(
+            entry_time_from_data(&four),
+            Err(AcsiError::InvalidValue { .. })
+        ));
+        assert_eq!(describe_entry_time(), TypeDescription::BinaryTime(true));
     }
 
     #[test]

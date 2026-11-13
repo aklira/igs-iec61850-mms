@@ -980,6 +980,33 @@ silent, to be confirmed by an observation test against other implementations.
   path, and `XCBR1$ST$Pos$stVal` is a two-bit bit string at zero. Without the `Dbpos` mapping the same file is refused with `SCL-003` on
   `XCBR1.Pos.stVal`, so the test checks the change.
 
+### D-043 — The other basic types of Q1: trigger and option fields, entry identifier and time, PhyComAddr refused (task Q1)
+
+- **Decision**: the basic types are mapped from 8-1 §8.1.3 as follows.
+  - `TrgOps` (`TriggerConditions`, §8.1.3.9, Table 37), `OptFlds` (`RCBReportOptions`, §8.1.3.13, Table 41) and `SvOptFlds`
+    (`SVMessageOptions`, §8.1.3.15, Table 42) are bit strings of their minimum size: six, ten and seven bits. Bit 0 (bit 1 for the sampled
+    values) is reserved, and each named bit has its position in the table. When read, the bits past the minimum are ignored and the missing
+    ones are zero, as D-004 gives for the other bit strings. When written, exactly the minimum size is sent.
+  - `EntryID` (§8.1.3.5) is an octet string of exactly eight octets; any other length is refused. Its reserved value is eight zero octets.
+  - `EntryTime` (§8.1.3.8) is the six-octet TimeOfDay (milliseconds and the day since 1 January 1984). The four-octet form has no day and is
+    refused. The zero value is the NULL entry time (7-2 §6.2.3.11).
+  - `PhyComAddr` stays refused. Its form is one of two: Layer 2 (Table 16: address, priority, VLAN, APPID) or UDP/IP (Table 40), and the
+    choice follows the protocol of the multicast traffic. That traffic (GOOSE, sampled values) is outside the scope of the library. The
+    namespace holds it in `NTS.dstAddress` and `GTS.dstAddress`, and the tracking objects that hold them (`UsvcbTrk`, and `GocbTrk` of the
+    GOOSE class) are refused whole. For `GocbTrk` the error is `Unsupported`, because the type comes from the specific mapping, not from the
+    catalogue; for `UsvcbTrk` it is `UnmappedType`.
+  - The initial value of an octet string is now zero octets of its size (before: empty), so that an `EntryID` starts at its reserved value.
+    An octet string of a variable size still conforms. The initial value of a `BinaryTime` is the zero time of day.
+- **Sources**: 8-1 §8.1.3.5, §8.1.3.8, §8.1.3.9 (Table 37), §8.1.3.13 (Table 41), §8.1.3.15 (Table 42), §8.1.3.3 and §8.1.3.12 (Tables 16 and 40),
+  7-2 §6.2.3.11 (NULL EntryTime); all in the prepared text `docs/spec/8-1`.
+- **Confidence**: high for the bit positions and the sizes, which are in the tables; high for EntryID and the NULL EntryTime; medium for the
+  reading of a longer bit string (D-004 policy, applied to the new fields).
+- **Effect**: the tracking objects of the reports, logs and setting groups (`BrcbTrk`, `UrcbTrk`, `LocbTrk`, `SgcbTrk`) are served. The GOOSE and
+  sampled value tracking objects stay refused, because they hold a `PhyComAddr`.
+- **Tests**: `acsi.rs`, the bit positions of each table, the reading of longer and shorter strings, the length of `EntryID`, the six-octet
+  `EntryTime`; `model/types.rs`, the resolution of each name; `tests/model.rs`, the refusal of `UsvcbTrk.dstAddress` and the served `BrcbTrk`
+  with its entry fields at zero.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

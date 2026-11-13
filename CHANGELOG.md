@@ -13,6 +13,9 @@ All notable changes to this project are recorded in this file. The format follow
 - The double-point status `Dbpos` is served as a two-bit coded enumeration (7-2 Table 24). A logical node with a
   breaker position (`XCBR.Pos`) is no longer refused for that type; an SCL file with a breaker is not yet checked end to end.
 - The step command `Tcmd` is resolved as a two-bit coded enumeration (7-2 Table 23); its control follows with the control task.
+- The trigger conditions, the report and the sampled value options (bit strings of their minimum size), the entry identifier and
+  the entry time are served (8-1 §8.1.3.5, §8.1.3.8, §8.1.3.9, §8.1.3.13, §8.1.3.15). The tracking objects of the reports, logs and
+  setting groups are served; the GOOSE and sampled value tracking, which holds a destination address, stays refused.
 
 ### Added
 

@@ -12,10 +12,11 @@
 use igs_iso9506_mms_codec::mms::TypeDescription;
 
 use crate::acsi::{
-    describe_boolean, describe_check_conditions, describe_coded_enum, describe_enumeration,
-    describe_float32, describe_octets, describe_quality, describe_signed, describe_timestamp,
-    describe_unicode, describe_unsigned, describe_visible, SignedInteger, UnsignedInteger,
-    DOUBLE_POSITION_SIZE, STEP_COMMAND_SIZE,
+    describe_boolean, describe_check_conditions, describe_coded_enum, describe_entry_id,
+    describe_entry_time, describe_enumeration, describe_float32, describe_octets, describe_quality,
+    describe_report_options, describe_signed, describe_sv_options, describe_timestamp,
+    describe_trigger_options, describe_unicode, describe_unsigned, describe_visible, SignedInteger,
+    UnsignedInteger, DOUBLE_POSITION_SIZE, STEP_COMMAND_SIZE,
 };
 use crate::catalogue;
 
@@ -47,6 +48,16 @@ pub fn basic(name: &str) -> Option<TypeDescription> {
         "Dbpos" => describe_coded_enum(DOUBLE_POSITION_SIZE),
         // The step command of a tap changer: a coded enumeration of two bits (7-2 Table 23).
         "Tcmd" => describe_coded_enum(STEP_COMMAND_SIZE),
+        // The trigger conditions, the report and the sampled value options: bit strings of their minimum size
+        // (8-1 §8.1.3.9, §8.1.3.13, §8.1.3.15).
+        "TrgOps" => describe_trigger_options(),
+        "OptFlds" => describe_report_options(),
+        "SvOptFlds" => describe_sv_options(),
+        // The entry identifier and the entry time (8-1 §8.1.3.5, §8.1.3.8).
+        "EntryID" => describe_entry_id(),
+        "EntryTime" => describe_entry_time(),
+        // PhyComAddr stays unmapped: its form depends on the protocol of the multicast traffic (Layer 2 or UDP/IP,
+        // 8-1 Tables 16 and 40), and that traffic is not in the scope of the library.
         _ => return None,
     })
 }
@@ -94,7 +105,7 @@ mod tests {
         assert_eq!(DOUBLE_POSITION_SIZE, 2);
         assert_eq!(STEP_COMMAND_SIZE, 2);
         // The types still unmapped are refused, never guessed.
-        assert_eq!(basic("TrgOps"), None);
+        assert_eq!(basic("PhyComAddr"), None);
         assert!(matches!(
             basic("Dbpos"),
             Some(TypeDescription::BitString(_))

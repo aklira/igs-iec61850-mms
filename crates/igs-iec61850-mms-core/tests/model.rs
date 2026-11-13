@@ -300,17 +300,70 @@ fn the_position_of_a_breaker_is_a_two_bit_double_point() {
 
 #[test]
 fn a_type_without_a_mapping_is_refused_with_its_path() {
-    // The tracking object of a buffered block holds an entry identifier and trigger options, types the mapping
-    // does not resolve yet. The object is given first, so that its error is the first one found.
-    let mut specs = vec![DataObjectSpec::new("BrcbTrk")];
-    specs.extend(with("LTRK", "BrcbTrk", vec![]));
+    // The tracking object of a sampled value block holds the destination address, a PhyComAddr whose form
+    // depends on the protocol of the traffic, and the mapping does not resolve it. The object is given first, so
+    // that its error is the first one found.
+    let mut specs = vec![DataObjectSpec::new("UsvcbTrk")];
+    specs.extend(with("LTRK", "UsvcbTrk", vec![]));
     let refused = LogicalNode::new("LTRK1", "LTRK", &specs);
     assert!(
         matches!(
             &refused,
-            Err(ModelError::UnmappedType { path, .. }) if path.starts_with("LTRK1.BrcbTrk.")
+            Err(ModelError::UnmappedType { path, type_name }) if path == "LTRK1.UsvcbTrk.dstAddress" && type_name == "PhyComAddr"
         ),
         "found {refused:?}"
+    );
+}
+
+#[test]
+fn the_tracking_objects_of_the_reports_and_the_logs_are_served_and_the_goose_one_is_not() {
+    // The tracking objects of the reports, the logs and the setting groups hold trigger, option and entry fields,
+    // which are mapped, and each one builds on its own.
+    for object in ["BrcbTrk", "UrcbTrk", "LocbTrk", "SgcbTrk"] {
+        let mut specs = vec![DataObjectSpec::new(object)];
+        specs.extend(with("LTRK", object, vec![]));
+        let served = LogicalNode::new("LTRK1", "LTRK", &specs);
+        assert!(served.is_ok(), "{object} is served: {served:?}");
+    }
+    // The GOOSE tracking holds the destination address, a PhyComAddr whose type the SCSM gives: it is refused,
+    // and so is the destination of the sampled values above (UsvcbTrk).
+    let mut specs = vec![DataObjectSpec::new("GocbTrk")];
+    specs.extend(with("LTRK", "GocbTrk", vec![]));
+    let refused = LogicalNode::new("LTRK1", "LTRK", &specs);
+    assert!(
+        matches!(
+            &refused,
+            Err(ModelError::Unsupported { path, .. }) if path == "LTRK1.GocbTrk.dstAddress"
+        ),
+        "found {refused:?}"
+    );
+}
+
+#[test]
+fn the_tracking_of_a_buffered_block_is_served_with_its_entry_fields_at_zero() {
+    // The entry identifier is eight zero octets and the entry time the six-octet zero time of day (8-1 §8.1.3.5,
+    // §8.1.3.8); the trigger and option fields are bit strings of their minimum size.
+    let mut specs = vec![DataObjectSpec::new("BrcbTrk")];
+    specs.extend(with("LTRK", "BrcbTrk", vec![]));
+    let node = LogicalNode::new("LTRK1", "LTRK", &specs).expect("the tracking node is served");
+    let layout = layout(&node, IDENTIFIER_LIMIT).unwrap();
+    let entry = path_of(&layout, "LTRK1$SR$BrcbTrk$entryID");
+    assert_eq!(
+        value_at(&layout.root_value, &entry),
+        &Data::OctetString(vec![0; 8])
+    );
+    let time = path_of(&layout, "LTRK1$SR$BrcbTrk$timeOfEntry");
+    assert!(matches!(
+        value_at(&layout.root_value, &time),
+        Data::BinaryTime(_)
+    ));
+    let trigger = path_of(&layout, "LTRK1$SR$BrcbTrk$trgOps");
+    assert_eq!(
+        value_at(&layout.root_value, &trigger),
+        &Data::BitString(BitString {
+            unused: 2,
+            bytes: vec![0]
+        })
     );
 }
 

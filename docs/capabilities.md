@@ -19,7 +19,9 @@ settles it. A gap is an item that is refused or reported explicitly, never serve
 | Arrays (`is_array`) | Refused (`Unsupported`) | D-008 |
 | `Dbpos` (double-point status, DPS, DPC, `XCBR.Pos`) | Served as a two-bit coded enumeration (7-2 Table 24) | D-042 |
 | `Tcmd` (step command, BSC) | Resolved as a two-bit coded enumeration (7-2 Table 23). It is a control-service parameter, not a data attribute, so no served object holds it yet; its control is task K | D-042 |
-| Basic types `TrgOps`, `OptFlds`, `SvOptFlds`, `EntryID`, `EntryTime`, `PhyComAddr` | Refused (`UnmappedType`) until their source clauses are read; an object that holds one is refused whole | D-008, D-042 |
+| `TrgOps`, `OptFlds`, `SvOptFlds` (trigger and option fields) | Served as bit strings of their minimum size (6, 10 and 7 bits, 8-1 §8.1.3.9, §8.1.3.13, §8.1.3.15); bits past the minimum are ignored when read | D-043 |
+| `EntryID` (eight octets), `EntryTime` (six-octet TimeOfDay with its day) | Served, zero at the start (8-1 §8.1.3.5, §8.1.3.8) | D-043 |
+| `PhyComAddr` (destination address of GOOSE and sampled values) | Refused (`UnmappedType`): its form depends on the Layer 2 or UDP/IP profile (8-1 Tables 16 and 40), and the multicast traffic is out of scope. An object that holds it (`NTS.dstAddress` and `GTS.dstAddress`: `UsvcbTrk`, `GocbTrk`) is refused whole | D-043 |
 | Enumerations chosen by the instance (no type name in the class) | Refused, unless the data object gives the name (its `underlying_type`) | D-008 |
 | Classes with variants (the setting groups `SPG`, `ING`, ...) | Refused until the variant is chosen | D-008 |
 | Service attributes added by 8-1 to the controllable and reporting classes (`Oper`, `SBOw`, `Cancel`, the control blocks) | Not in the model yet: control and reporting tasks | D-008 |
