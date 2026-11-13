@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 The igs-iec61850-mms contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Sibling repository igs-iso9506-mms
+description: >-
+  Clones aklira/igs-iso9506-mms where the path dependencies of the library crates look for it:
+  ../../../igs-iso9506-mms from crates/igs-iec61850-mms-core, that is $GITHUB_WORKSPACE/../igs-iso9506-mms.
+  The clone is outside the workspace, so actions/checkout cannot place it there.
+
+inputs:
+  token:
+    description: Token that reads the sibling repository (a secret when that repository is private).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Clone the sibling repository next to the workspace
+      shell: bash
+      env:
+        SIBLING_TOKEN: ${{ inputs.token }}
+      run: |
+        # The default branch, shallow. Pin a commit here when the sibling starts to change independently.
+        auth=$(printf 'x-access-token:%s' "$SIBLING_TOKEN" | base64 -w0)
+        git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+          clone --depth 1 https://github.com/aklira/igs-iso9506-mms.git "$GITHUB_WORKSPACE/../igs-iso9506-mms"
+        test -f "$GITHUB_WORKSPACE/../igs-iso9506-mms/Cargo.toml"

@@ -5,10 +5,12 @@
 # Publication to crates.io on a version tag (R1, the owner's gate). A tag `vX.Y.Z` must match the version of both library crates.
 # The quality gate runs first; then the core crate is published, then the client and server crate once the core is in the index.
 #
-# Prerequisites (not met by the repository yet, see docs/ai-log/R1.md):
-# - the igs-iso9506-mms crates that the library depends on must be published on crates.io at the version the manifests name;
-# - the `path` dependencies on the sibling repository must be removed, or that repository checked out here, for the build to resolve;
-# - the repository secret CARGO_REGISTRY_TOKEN must hold a crates.io token with publish rights for these two crates.
+# Prerequisites (see docs/ai-log/R1.md):
+# - the sibling repository aklira/igs-iso9506-mms is cloned by the composite action .github/actions/sibling-checkout (the path
+#   dependencies need it); the secret SIBLING_REPO_TOKEN is needed when that repository is private;
+# - the repository secret CARGO_REGISTRY_TOKEN must hold a crates.io token with publish rights for these two crates;
+# - `cargo publish` packages the sibling crates by their registry version: they must be on crates.io at the version the manifests name,
+#   or the publication fails at the first dry run.
 
 name: Publish
 
@@ -39,6 +41,11 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Sibling repository (path dependencies)
+        uses: ./.github/actions/sibling-checkout
+        with:
+          token: ${{ secrets.SIBLING_REPO_TOKEN || github.token }}
 
       - name: Toolchain
         uses: dtolnay/rust-toolchain@stable
