@@ -39,8 +39,8 @@ settles it. A gap is an item that is refused or reported explicitly, never serve
 | --- | --- | --- |
 | Timestamps with their quality (leap-second knowledge, clock failure, not synchronised, accuracy 0 to 24 or unspecified) | Served; refused above 24 bits at the clock | D-014 |
 | Host clock with a declared quality (default: not synchronised) | Served | D-014 |
-| Embedded SNTP client (TIME-002) | Not implemented; the host synchronisation is declared instead | D-014 |
-| Accuracy from the root dispersion (TIME-003) | Not applicable without SNTP | D-014 |
+| Embedded SNTP client (TIME-002): requests in mode 3, replies in mode 4, checks of each reply, offset and delay | Served: the client is sans-I/O in the core, its UDP loop is `igs_iec61850_mms::sntp`; the host synchronisation remains a choice, declared in the PIXIT | D-052 |
+| Accuracy from the root dispersion (TIME-003) | Served: the unadjusted root distance (dispersion plus half the delay), rounded up to bits of the fraction; above one second, not synchronised; not extrapolated after 1024 s | D-052 |
 | PTP (IEC/IEEE 61850-9-3) | Not implemented | D-014 |
 | Application updates of values, qualities and timestamps | Served, per logical node, all or nothing, with a revision | D-015 |
 | Snapshot of several items of one Read | Not one state: each item at its own moment | D-015, MODEL-006 |

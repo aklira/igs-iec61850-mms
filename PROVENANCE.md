@@ -1175,6 +1175,45 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the transport checks (the handshake and the revocation are the backend's, tested in its repository); the profile's
   conformance is not claimed, for the inherited gaps.
 
+### D-052 — The embedded SNTP client and the accuracy from the root distance (task O5; TIME-002, TIME-003)
+
+- **Sources**: IEC 61850-8-1 §6.4.2.2 (the SNTP subset of RFC 5905; mode 3 for the clients, mode 4 for the servers; "the unadjusted
+  DELTA to the SNTP Root Dispersion attribute shall be used to determine the TimeQuality.TimeAccuracy") and §6.4.3.2 (UDP port 123);
+  prepared text in `docs/spec/8-1/sections/050_6.4_time_sync.md`. RFC 5905, public text: the packet layout of §7.3, the offset
+  θ = ((T2 − T1) + (T3 − T4)) / 2, the delay δ = (T4 − T1) − (T3 − T2), LAMBDA = EPSILON + DELTA/2, the short format of the root values
+  (units of 2^-16 s), and the receive checks of the reference code (zero transmit timestamp, origin of the pending request, leap
+  indicator 3, stratum). RFC 5905 §14 (SNTP) is short: it lets a client use only the transmit timestamp and leaves the rest to the
+  implementation; the checks below are the ones of the full protocol's receive path, which an SNTP client applies too.
+- **TISSUE 1704** (`docs/spec/tissues/tissues.yaml`) asked which of DELTA, EPSILON and LAMBDA gives the accuracy. It was closed as not
+  applicable: the triage says the formula is a local issue, that the root dispersion cannot be used directly, and that the manufacturer
+  should give a conservative value, especially in holdover. The standard therefore gives no formula; the reading below is ours.
+- **Accuracy (TIME-003)**: the error bound is the root distance of the last accepted reply, LAMBDA = root dispersion + root delay / 2,
+  as the reply carries it, unadjusted (no growth term of RFC 5905, no jitter). The bound is rounded up to the bits of the 2^-24 s fraction
+  of an IEC timestamp: `TimeAccuracy::Bits(n)` with 2^n units ≥ the bound; a distance above one second does not fit in the 24 bits and the
+  clock is reported as not synchronised. The distance is not extrapolated: after `MAX_AGE` (1024 s) without a reply the clock is not
+  synchronised. Without that cut-off, the unadjusted bound would be optimistic in holdover (about 15 ms of drift per 1024 s at 15 ppm,
+  before the local growth that RFC 5905 adds), which is the case that TISSUE 1704 warns about.
+- **Checks of a reply** (`check_reply`, in this order): mode 4; version 3 or 4; the origin equals the transmit timestamp of the pending
+  request (an old or foreign reply is refused); the transmit timestamp is not zero; stratum 0 is a kiss-o'-death, refused and reported with
+  its kiss code (checked before the leap indicator, which a kiss-o'-death also sets to 3); leap indicator 3 (not synchronised); stratum 16
+  or more. A refused reply leaves the pending request and the estimate as they were.
+- **Offset and delay**: the clock is corrected by θ, so that a stamp is the local time plus θ. The delay is computed and clamped to zero
+  when the clocks make it negative; it is not part of the accuracy, which the standard takes from the root values only.
+- **Client**: one request in flight, sent at most once per `POLL_INTERVAL` (64 s, a fixed poll). The RFC's mitigation algorithms are not
+  run: §14 says an SNTP client does not need them. The durations are on the monotonic clock (RUN-003); the timestamps are the local UTC
+  time. A reply sets `leap_second_known`; a leap second that the server announces (indicator 1 or 2) is not carried into the stamp.
+- **What this change does**: `igs-iec61850-mms-core` (`sntp`, sans-I/O: the packet, its checks, the exchange, the accuracy, the client);
+  `igs-iec61850-mms` (`sntp::SntpClock`, the UDP loop on port 123 and the `ClockSource` of TIME-001). The host clock of A5 is kept; the
+  choice between the host synchronisation and the embedded client is declared in the PIXIT, not in the code.
+- **Not done**: the RFC's mitigation and adaptive poll; authentication of the replies (MAC or NTS: 8-1 does not require it); several
+  servers and IPv6 selection; PTP (IEC/IEEE 61850-9-3), which stays optional and not implemented.
+- **Tests**: `igs-iec61850-mms-core/tests/sntp.rs` (16: the packets, the RFC formulas, each refusal, the accuracy bits, the poll interval,
+  the estimate and its age, a stamp before 1970); `igs-iec61850-mms/tests/sntp.rs` (5: the clock over a loopback UDP server, synchronised
+  with the accuracy of the reply, refused for another origin and for a kiss-o'-death, not synchronised without an answer).
+- **Confidence**: high for the packet layout, the offset and the delay (RFC 5905 as read); high for the checks (the receive path of the
+  reference code); medium for the accuracy reading, since the standard gives no formula and the TISSUE was closed. The reading is
+  conservative, and it is listed as an interpretation in `docs/capabilities.md`.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

@@ -34,4 +34,5 @@ pub mod report;
 #[cfg(feature = "scl")]
 pub mod scl;
 pub mod settings;
+pub mod sntp;
 pub mod time;

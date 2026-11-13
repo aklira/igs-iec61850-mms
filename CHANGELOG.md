@@ -30,6 +30,10 @@ All notable changes to this project are recorded in this file. The format follow
 
 ### Added
 
+- Embedded SNTP client (TIME-002, TIME-003): `sntp` in the core builds the requests (mode 3), checks each reply (mode 4, origin,
+  kiss-o'-death, leap indicator, stratum) and computes the offset and the delay of RFC 5905. The accuracy of the clock is its root
+  distance, unadjusted and rounded up to bits of the fraction (8-1 §6.4.2.2); the clock is not synchronised without a reply and
+  1024 s after the last one. `igs_iec61850_mms::sntp::SntpClock` is the UDP loop and the clock source (D-052).
 - The secured profile of the station: `secure::secure_station` builds the TLS of a station from PEM material (mutual authentication and
   the revocation list), `secure::secured_server_config` serves the model over it. The profile's cipher suites and renegotiation are not
   conform yet (inherited gaps, D-051); IEC 62351-4 and -6 are not held.
@@ -66,7 +70,8 @@ All notable changes to this project are recorded in this file. The format follow
 - Buffered reports: the general interrogation and the reservation of a buffered block; the reverse direction against the
   reference client, and the resumption against the reference server (see `docs/interop.md`).
 - Time-activated operate, and the security matrix (optional groups): refused or not provided.
-- Embedded SNTP and PTP: the host clock with its declared quality is used.
+- PTP (IEC/IEEE 61850-9-3): not implemented. The time comes from the host clock with its declared quality, or from the embedded SNTP
+  client.
 - Edition 1 interoperability is not tested against a peer yet.
 - Writing the PICS, MICS and PIXIT drafts of the capability statements.
 

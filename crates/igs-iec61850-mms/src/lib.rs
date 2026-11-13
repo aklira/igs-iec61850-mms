@@ -28,6 +28,7 @@ mod setting_groups;
 
 pub mod clock;
 pub mod control;
+pub mod sntp;
 pub mod updates;
 
 pub mod client;

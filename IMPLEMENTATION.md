@@ -623,6 +623,7 @@ The agent does not wait for these; it records the impact and continues with what
 | Q6 File services | [ ] MMS part done locally (N8 of igs-iso9506-mms, D-049): GetFile, GetFileAttributeValues, DeleteFile; the IEC file class in the SCL model and SetFile stay open |
 | O3 Setting groups: the SGCB, its services and the values of the groups | [x] (D-050, docs/ai-log/O3.md; the Owner is not in table 71) |
 | O4 Secured profile: TLS of the station under IEC 62351-3 (transport only) | [x] (D-051, docs/ai-log/O4.md; 62351-4 and 62351-6 not held) |
+| O5 Embedded SNTP client: requests, checks of the replies, accuracy from the root distance (TIME-002, TIME-003) | [x] (D-052, docs/ai-log/O5.md; PTP not implemented) |
 | R1 Legal review and release ⛔ | [ ] |
 
 Suggested order: P1, P3, P6, P5, F1, F2, F4, N1–N4 (M0), P2, P4, F3, A1–A7, S1–S3, D1 (M1), N5,
