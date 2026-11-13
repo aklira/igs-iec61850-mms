@@ -555,7 +555,7 @@ The agent does not wait for these; it records the impact and continues with what
 | K3 Deferred outcomes and client control API | [x] |
 | E1 Inventory of Edition 1 differences | [x] |
 | E2 Detection and profile | [x] |
-| E3 Edition 1 interop | [ ] |
+| E3 Edition 1 interop | [ ] blocked: no Edition 1 peer (docs/ai-log/E3.md) |
 | G1 One runtime, clients and server | [x] |
 | G2 Proxy model, quality and controls | [x] |
 | V1 Capability statements | [ ] |
