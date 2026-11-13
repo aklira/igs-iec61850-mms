@@ -938,6 +938,16 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high on the names and the structure (the reference client runs with them); medium on the order of the structure's components, which
   the reference client does not complain about but which is not checked against its decoder (it uses the positions of its own type).
 
+### D-041 — R1, generated files from the IEC code components: kept in the repository with the IEC notice (owner's decision)
+
+- **Decision** (owner, R1): the files generated from the IEC code components (`catalogue/generated/ns_*.rs`, `scl/generated/schema_2007b.rs`) stay
+  in the repository under Apache-2.0 for the code, with the IEC copyright notice, the attribution note in each file header, the SPDX identifier
+  `IEC-Code-Components-EULA`, and `NOTICE` (as they are now).
+- **Open before any push**: the EULA text recorded in `NOTICE` does not say that redistribution is reserved to the purchaser of the standard; the
+  plan's R1 note does. The official text (www.iec.ch/CCv1) must be checked on that point, and the question whether the generated tables are a
+  permitted modification, before the first push.
+- **Not done here**: no push, no tag, no publication. R1 stays open until the maintainer publishes.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
