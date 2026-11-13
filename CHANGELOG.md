@@ -30,6 +30,8 @@ All notable changes to this project are recorded in this file. The format follow
 
 ### Added
 
+- The setting group control block (SGCB) of a logical device, as a state machine in the core: the active group, the editing reservation,
+  the confirmation of the edited group, and the expiry and loss rules of IEC 61850-7-2 §16 (D-050). The served part is not done yet.
 - Server: logical devices, nodes and data objects served as MMS variables, read and write of the served attributes,
   directory and definitions, application updates per node with one revision (`ServedModel`, `Updater`).
 - Configuration: import of a declared subset of an SCL file (ICD, CID): model, data sets, addresses; the structure and

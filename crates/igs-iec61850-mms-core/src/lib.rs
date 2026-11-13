@@ -33,4 +33,5 @@ pub mod reference;
 pub mod report;
 #[cfg(feature = "scl")]
 pub mod scl;
+pub mod settings;
 pub mod time;

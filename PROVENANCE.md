@@ -1117,6 +1117,37 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the size rule (7-2 §6.2.5.5 and the 8-1 mapping), medium for the reading of the size attribute as an instance value
   (the SCL `DAI`), which the catalogue names but does not give.
 
+### D-050 — The setting group control block: the state and the rules of the services (task O3)
+
+- **Sources**: IEC 61850-7-2 §16.2 (the SGCB: `NumOfSG`, `ActSG`, `EditSG`, `CnfEdit`, `LActTm`, `ResvTms`, the default of `EditSG` at power-up
+  is zero) and §16.3 (SelectActiveSG, SelectEditSG with its reservation, SetEditSGValue, ConfirmEditSGValues, GetEditSGValue,
+  GetSGCBValues); IEC 61850-8-1 §16.1 (the SGCB is a named component of LLN0 with FC SP, table 71) and §16.2 (each service is a
+  specialisation of an MMS read or write of those attributes). The 7-2 text is in the prepared texts; the figure of the settings model
+  (figure 24) is missing and not needed for the rules.
+- **No new service PDU**: the setting group services are writes and reads of the SGCB attributes and of the SG and SE attributes, so the
+  MMS layer of `igs-iso9506-mms` needs no change for them.
+- **State** (`settings.rs`, `Sgcb`): `NumOfSG` (at least one), `ActSG` (1 to `NumOfSG`), `EditSG` (0 to `NumOfSG`, zero at power-up),
+  `CnfEdit`, `LActTm`, and the holder of the editing with the time of its last SelectEditSG.
+- **Rules**:
+  - SelectActiveSG: a group from 1 to `NumOfSG`; it dates `LActTm`. A refused value changes nothing.
+  - SelectEditSG: zero or a group from 1 to `NumOfSG`; a non-zero group reserves the editing for the client when it is free or its own;
+    zero cancels the editing of this client. Another client is refused (`Reserved`).
+  - SetEditSGValue: allowed only for the holder, with a group selected (`NotReserved` otherwise, `NothingToConfirm` when `EditSG` is zero).
+  - ConfirmEditSGValues: only the holder, with a group selected. It overwrites that group, releases the editing, sets `EditSG` back to zero,
+    dates `LActTm` when the active group is confirmed, and sets `CnfEdit` until the storage is done (`storage_done`).
+  - The reservation expires `RESERVATION` (60 s) after the last SelectEditSG without a confirmation; the holder's association loss releases
+    it (§16.3.3). `ResvTms` reads its value while the editing is held, zero when it is free.
+- **Decisions where the text is open**: the duration of the reservation is a local choice, since the SCL file does not give it in this
+  release; `EditSG` returns to zero after a confirmation (the text does not say what it holds afterwards).
+- **Not done (the served part)**: the SGCB as a named component of LLN0 in the served model (its reads with GetSGCBValues, its writes as
+  SelectActiveSG, SelectEditSG and ConfirmEditSGValues); the values of the groups (the active values read from FC SG, the edited values
+  written with FC SE, the storage of each group); the Owner of the reservation. Until then the services stay refused (SCOPE-002).
+- **Tests**: `tests/settings.rs` (nine, with controlled time): the initial state, the active selection and its date, the editing reservation
+  and its cancellation, the holder's writes, the confirmation (the overwrite, the release, the re-activation), a confirmation of another
+  group, the refusals of a confirmation, the expiry of the reservation, the loss of the holder.
+- **Confidence**: high for the state and the services' conditions (the text of 7-2 §16.3); medium for the duration and for `EditSG` after
+  a confirmation.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
