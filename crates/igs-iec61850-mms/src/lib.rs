@@ -23,6 +23,7 @@
 mod buffered;
 pub mod model;
 pub mod reports;
+pub mod secure;
 mod setting_groups;
 
 pub mod clock;

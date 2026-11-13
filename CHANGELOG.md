@@ -30,6 +30,9 @@ All notable changes to this project are recorded in this file. The format follow
 
 ### Added
 
+- The secured profile of the station: `secure::secure_station` builds the TLS of a station from PEM material (mutual authentication and
+  the revocation list), `secure::secured_server_config` serves the model over it. The profile's cipher suites and renegotiation are not
+  conform yet (inherited gaps, D-051); IEC 62351-4 and -6 are not held.
 - The setting group control block (SGCB) of a logical device, served as `LLN0$SP$SGCB`: its structure is read, SelectActiveSG,
   SelectEditSG and ConfirmEditSGValues are writes of its attributes, and SetEditSGValue is a write of the values with FC SE by the holder of the
   editing; the values of each group are kept, and the editing is released when its association is lost (IEC 61850-7-2 §16; D-050).
