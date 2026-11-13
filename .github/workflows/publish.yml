@@ -59,7 +59,7 @@ jobs:
 
       - name: Quality gate
         run: |
-          cargo fmt --all --check
+          cargo fmt -p igs-iec61850-mms-core -p igs-iec61850-mms -p xtask -- --check
           cargo clippy --workspace --all-targets --all-features -- -D warnings
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace --all-features

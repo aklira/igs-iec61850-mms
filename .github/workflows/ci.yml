@@ -38,7 +38,8 @@ jobs:
           tool: cargo-deny,cargo-llvm-cov
 
       - name: Format
-        run: cargo fmt --all --check
+        # Our packages only: the sibling repository is formatted by its own gate.
+        run: cargo fmt -p igs-iec61850-mms-core -p igs-iec61850-mms -p xtask -- --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
