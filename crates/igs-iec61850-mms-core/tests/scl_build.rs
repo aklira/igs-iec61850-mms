@@ -323,3 +323,47 @@ fn a_member_that_selects_no_variable_of_the_model_refuses_the_configuration() {
         "selects no variable of the model",
     );
 }
+
+const BREAKER: &str = include_str!("data/breaker.cid");
+
+#[test]
+fn a_breaker_with_a_double_point_position_builds_and_its_position_is_two_bits() {
+    // The double-point position of XCBR1 (a DPC whose status is a Dbpos, 7-2 Table 24) used to refuse the whole
+    // document (SCL-003); the breaker builds and its status is a bit string of two bits, zero at the start.
+    let configuration = build_text(BREAKER).expect("the breaker builds");
+    let device = &configuration.model.devices()[0];
+    let node = device
+        .nodes()
+        .iter()
+        .find(|n| n.name().to_string() == "XCBR1")
+        .expect("the breaker is served");
+    let layout = igs_iec61850_mms_core::model::layout::layout(
+        node,
+        igs_iec61850_mms_core::model::layout::IDENTIFIER_LIMIT,
+    )
+    .expect("the layout is built");
+    let stval = layout
+        .variables
+        .iter()
+        .find(|v| v.name == "XCBR1$ST$Pos$stVal")
+        .expect("the status of the position is a variable");
+    assert_eq!(
+        stval.ty,
+        igs_iso9506_mms_codec::mms::TypeDescription::BitString(
+            igs_iso9506_mms_codec::mms::Integer32(2)
+        )
+    );
+    assert_eq!(
+        stval
+            .path
+            .iter()
+            .fold(&layout.root_value, |value, index| match value {
+                igs_iso9506_mms_codec::mms::Data::Structure(members) => &members[*index],
+                other => panic!("the path leaves the structure at {other:?}"),
+            }),
+        &igs_iso9506_mms_codec::mms::Data::BitString(igs_iso9506_mms_codec::schema::BitString {
+            unused: 6,
+            bytes: vec![0],
+        })
+    );
+}

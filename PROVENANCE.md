@@ -976,8 +976,9 @@ silent, to be confirmed by an observation test against other implementations.
 - **Not done**: the control of a `Dbpos` or a `Tcmd` (write of `ctlVal`) is refused until task K writes its control machine, as before.
 - **Tests**: `acsi.rs`, the vectors of the four values and the reading of extra bits; `tests/model.rs`, a breaker position built with its two-bit
   status at zero, and the refusal of `BrcbTrk` (which holds `TrgOps` and `EntryID`) with its path.
-- **Not verified**: an end-to-end SCL file with a breaker was not built; the SCL build reaches the same `LogicalNode::new` call, so the refusal is
-  removed there too, but this is not run.
+- **End-to-end check**: `tests/data/breaker.cid` (an IED with `LD1`, `LLN0` and `XCBR1` with its six mandatory objects) builds through the SCL
+  path, and `XCBR1$ST$Pos$stVal` is a two-bit bit string at zero. Without the `Dbpos` mapping the same file is refused with `SCL-003` on
+  `XCBR1.Pos.stVal`, so the test checks the change.
 
 ## Third-party code and sources
 

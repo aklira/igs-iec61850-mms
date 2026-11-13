@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A synthetic configuration written for the tests of phase Q (Dbpos, D-042). It is not an extract of the standard. -->
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B">
+  <Header id="BREAKER-CID" version="1" revision="1" toolID="igs-test"/>
+  <Communication>
+    <SubNetwork name="SN1" type="8-MMS">
+      <ConnectedAP iedName="IED1" apName="AP1">
+        <Address>
+          <P type="IP">192.0.2.10</P>
+          <P type="IP-SUBNET">255.255.255.0</P>
+        </Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+  <IED name="IED1" type="BREAKER" manufacturer="igs" configVersion="1">
+    <AccessPoint name="AP1">
+      <Services>
+        <GetDirectory/>
+        <GetDataObjectDefinition/>
+        <ReadWrite/>
+      </Services>
+      <Server>
+        <Authentication none="true"/>
+        <LDevice inst="LD1">
+          <LN0 lnClass="LLN0" inst="" lnType="LLN0T"/>
+          <LN lnClass="XCBR" inst="1" lnType="XCBRT"/>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+  <DataTypeTemplates>
+    <LNodeType id="LLN0T" lnClass="LLN0">
+      <DO name="Beh" type="ENS"/>
+    </LNodeType>
+    <LNodeType id="XCBRT" lnClass="XCBR">
+      <DO name="Beh" type="ENS"/>
+      <DO name="Loc" type="SPS"/>
+      <DO name="OpCnt" type="INS"/>
+      <DO name="Pos" type="DPC"/>
+      <DO name="BlkOpn" type="SPC"/>
+      <DO name="BlkCls" type="SPC"/>
+    </LNodeType>
+    <DOType id="ENS" cdc="ENS">
+      <DA name="stVal" fc="ST" bType="Enum" type="BehKind"/>
+      <DA name="q" fc="ST" bType="Quality"/>
+      <DA name="t" fc="ST" bType="Timestamp"/>
+    </DOType>
+    <DOType id="SPS" cdc="SPS">
+      <DA name="stVal" fc="ST" bType="BOOLEAN"/>
+      <DA name="q" fc="ST" bType="Quality"/>
+      <DA name="t" fc="ST" bType="Timestamp"/>
+    </DOType>
+    <DOType id="INS" cdc="INS">
+      <DA name="stVal" fc="ST" bType="INT32"/>
+      <DA name="q" fc="ST" bType="Quality"/>
+      <DA name="t" fc="ST" bType="Timestamp"/>
+    </DOType>
+    <DOType id="DPC" cdc="DPC">
+      <DA name="stVal" fc="ST" bType="Dbpos" dchg="true"/>
+      <DA name="q" fc="ST" bType="Quality"/>
+      <DA name="t" fc="ST" bType="Timestamp"/>
+    </DOType>
+    <DOType id="SPC" cdc="SPC">
+      <DA name="stVal" fc="ST" bType="BOOLEAN"/>
+      <DA name="q" fc="ST" bType="Quality"/>
+      <DA name="t" fc="ST" bType="Timestamp"/>
+    </DOType>
+    <EnumType id="BehKind">
+      <EnumVal ord="1">on</EnumVal>
+      <EnumVal ord="5">off</EnumVal>
+    </EnumType>
+  </DataTypeTemplates>
+</SCL>
