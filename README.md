@@ -32,7 +32,8 @@ What it does not do yet (details in [`docs/capabilities.md`](docs/capabilities.m
 - buffered reports: the owner (`Owner`) is not served, and a general interrogation restarted while being sent is not restarted;
 - Edition 1 interoperability is not tested against a peer;
 - no SNTP or PTP; the host clock is used with its declared quality;
-- no arrays, logs, file services, setting groups, GOOSE or sampled values; declared services that are not executed are refused,
+- no arrays, file services, setting groups, GOOSE or sampled values; the log model is in the core, its MMS journal services are not served yet;
+  declared services that are not executed are refused,
   not dropped.
 
 Conformance drafts (ACSI statement, PICS, MICS, PIXIT) are in [`docs/conformance-drafts.md`](docs/conformance-drafts.md). They are

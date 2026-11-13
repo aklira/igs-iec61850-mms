@@ -19,6 +19,9 @@ All notable changes to this project are recorded in this file. The format follow
 - Buffered reports: the general interrogation (`GI`, figure 30) sends the buffered entries first, then every member once; the
   reservation (`ResvTms`, 7-2 §17.2.2.17) keeps other clients out while it holds, and for its time after the loss of its holder.
   Only the loss of the owner disables a buffered block now.
+- Logs: the log (a bounded buffer with entry identifiers) and its control block (recording of the changes of a data set, of the
+  transitions of LogEna and of the integrity period) are state machines in the core, with the queries by time and after an entry
+  and the status (7-2 §17.3). The MMS journal services are not served yet.
 
 ### Added
 

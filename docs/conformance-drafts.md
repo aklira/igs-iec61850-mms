@@ -18,7 +18,7 @@ statements` is open (task V1 stays unticked for that reason).
 | Gateway (one runtime, mirrors, forwarded controls) | Implemented; no reconnection | GW-001, GW-003, GW-004 |
 | Editions: detection from the namespace; the causes of the first edition | Implemented; the other causes of the first edition are not known | ED1-001, ED1-004 |
 | Time: quality flags, clock loss, recovery | Implemented at the level of the clock source; no SNTP | TIME-001 |
-| Logs, file services, setting groups, GOOSE, SV | Not implemented (no row claims them) | SCOPE-002 (refused when declared) |
+| Logs (the model in the core, LOG-001; no MMS journal service yet), file services, setting groups, GOOSE, SV | Logs: core only; the others not implemented (no row claims them) | LOG-001, SCOPE-002 (refused when declared) |
 | Security (optional group) | Not implemented | SEC-001 |
 
 Declarations in SCL of a service the server does not execute are refused, not dropped (SCOPE-002); the SCL subset is in SCL-001 and

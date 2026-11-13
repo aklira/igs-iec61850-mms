@@ -619,7 +619,7 @@ The agent does not wait for these; it records the impact and continues with what
 | Q2 Classes with variants (setting groups) | [ ] |
 | Q3 Arrays and enumerations chosen by the instance | [ ] |
 | Q4 Buffered reports: general interrogation and reservation | [ ] core, server and client done (D-044, docs/ai-log/Q4.md); bench row against the reference peer open |
-| Q5 Log services | [ ] |
+| Q5 Log services | [ ] core done: log buffer, queries, log control block (D-045, docs/ai-log/Q5.md); the MMS journal services (ReadJournal, LCB and LOG on the server) wait for a phase N in `igs-iso9506-mms` |
 | Q6 File services | [ ] |
 | R1 Legal review and release ⛔ | [ ] |
 

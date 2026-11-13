@@ -1043,6 +1043,36 @@ silent, to be confirmed by an observation test against other implementations.
   block, the reservation of a lost holder and its timer, a loss that changes nothing, and the loss of the owner), and two association tests in
   `tests/buffered.rs` (a general interrogation to the owner; a reservation that refuses the enabling of another association).
 
+### D-045 — The log (`LOG`) and its control block as core state machines (task Q5; LOG-001)
+
+- **Sources**: 7-2 §17.3.1.1 (logging is independent of the associations), §17.3.1.2 (the log buffer: the oldest entry is overwritten, the
+  identifiers keep increasing), §17.3.2 and Table 78 (the LCB attributes), §17.3.4 and Table 82 (the LOG and its `EntryData` choice), §17.3.5
+  (the reason codes of the log entries), §17.3.6.2 to §17.3.6.4 (`QueryLogByTime`, `QueryLogAfter`, `GetLogStatusValues`); 8-1 §17.3.3.4 and
+  Table 77 (the mapping of the entries to MMS journals). All in the prepared texts (`docs/spec/7-2`, `docs/spec/8-1`). Figure 36 (the overview)
+  is missing from the prepared text; it is not needed for the state machines, which the clauses describe in full.
+- **The log**: a bounded first-in first-out buffer. An entry has an identifier (a counter that is not reused) and its time of entry (the
+  time it was added). The content is either the members that a control block logged, with their reasons, or the transition of `LogEna` of a
+  control block (the second choice of `EntryData`, §17.3.4).
+- **Queries**: `query_by_time` returns the entries whose time of entry lies in the range, both ends included, an absent end being open
+  (§17.3.6.2). `query_after` takes the time and the identifier of an entry, and returns the entries after it, never that entry. The pair must
+  match a held entry; otherwise the query is refused (`UnknownEntry`). The text of Table 85 says the pair identifies the selected entry, which
+  is the reading taken; confidence medium, to confront with the MMS mapping of `QueryLogAfter` (8-1 §17.3.4.6, Table 81).
+- **Status**: the oldest and the newest time and identifier; an empty log gives zero times and the NULL identifiers (§17.3.6.4).
+- **The control block**: `LogEna` TRUE needs a log (`LogRef`) and a data set that exists; the transition is recorded, and it is recorded
+  again at FALSE. While enabled, every configuration attribute is refused (§17.3.2). The general interrogation is refused as a trigger of
+  logging ("shall not be supported", §17.3.2). A change of a monitored member is recorded at once, with its reason (§17.3.5.2); the integrity
+  period records every member with the reason integrity (§17.3.5.3). The buffer time is not supported in this release. The application
+  trigger (§17.3.5.4) is not in the core: it is a write by the application, to come with the server.
+- **Associations**: the control block is not affected by the loss of an association (§17.3.1.1); the entries made meanwhile are kept.
+- **Values**: as for the buffered reports, the core does not hold the values. The caller reads the members when it appends a record, which
+  is how the server will keep the values of each entry.
+- **Not done (the MMS part)**: `ReadJournal`, the journal entries (EntryContent, the `event` and `listofVariable` elements of 8-1 Table 155),
+  and the MMS names of the LCB and LOG. The MMS layer (`igs-iso9506-mms`) has no journal service: only the generated codec types exist. This
+  needs a phase N in that repository, which is a decision for the owner (see the ai-log of Q5).
+- **Tests**: `tests/logs.rs` (10 tests with controlled time): the bounded buffer and the identifiers, the queries by time and after an
+  entry, the status, the recording while enabled only, the transitions of LogEna, the refusal of configuration while enabled, the refusal
+  of the general interrogation, the requirements for enabling, and the integrity period.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

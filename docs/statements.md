@@ -85,3 +85,9 @@ Each row names the tests that cover it; `cargo xtask statements --check` verifie
 | Requirement | Item | State | Tests |
 | --- | --- | --- | --- |
 | TIME-001 | Timestamps with quality flags, clock loss and recovery | Implemented at the level of the clock source (A5); SNTP not implemented (O5) | `a_host_whose_state_is_not_declared_is_not_synchronised` (crates/igs-iec61850-mms/tests/clock.rs) |
+
+## logs
+
+| Requirement | Item | State | Tests |
+| --- | --- | --- | --- |
+| LOG-001 | Log and log control block: bounded buffer with entry identifiers, queries by time and after an entry, status, recording of changes and of LogEna transitions (7-2 17.3) | Implemented in the core (state machines); the MMS journal services (ReadJournal, LCB and LOG names) are not served yet (D-045) | `the_log_overwrites_its_oldest_entry_and_the_identifiers_keep_increasing` (crates/igs-iec61850-mms-core/tests/logs.rs)<br>`a_query_after_an_entry_returns_the_entries_that_follow_it` (crates/igs-iec61850-mms-core/tests/logs.rs)<br>`a_change_is_recorded_only_while_enabled_and_with_its_reason` (crates/igs-iec61850-mms-core/tests/logs.rs)<br>`the_integrity_period_records_every_member_and_then_arms_the_next_period` (crates/igs-iec61850-mms-core/tests/logs.rs) |
