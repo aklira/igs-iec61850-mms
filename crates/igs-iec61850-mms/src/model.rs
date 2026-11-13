@@ -254,6 +254,8 @@ pub struct ServedModel {
     pub(crate) origin: Instant,
     /// The static data sets, as (device, name): the named variable lists of the configuration, which no client deletes.
     static_lists: BTreeSet<(String, String)>,
+    /// The setting groups of the devices that declare them (task O3), served through their SGCB.
+    pub(crate) settings: Vec<crate::setting_groups::DeviceSettings>,
 }
 
 impl ServedModel {
@@ -268,6 +270,7 @@ impl ServedModel {
             origin: Instant::now(),
             aa_lists: BTreeMap::new(),
             static_lists: BTreeSet::new(),
+            settings: Vec::new(),
         })
     }
 
@@ -355,6 +358,7 @@ impl ServedModel {
             ));
         }
         let controls = configured_controls(configuration, &updater)?;
+        let settings = crate::setting_groups::devices_of(configuration, &updater);
         Ok(Self {
             vmd,
             updater,
@@ -363,6 +367,7 @@ impl ServedModel {
             origin: Instant::now(),
             aa_lists: BTreeMap::new(),
             static_lists,
+            settings,
         })
     }
 
@@ -436,6 +441,9 @@ impl Model for ServedModel {
 
     fn released(&mut self, peer: &Peer) {
         self.aa_lists.remove(&peer.id);
+        for device in &mut self.settings {
+            device.released(igs_iec61850_mms_core::control::ClientId(peer.id.0));
+        }
         let now = self.origin.elapsed();
         self.controls.released(now, peer.id);
         if let Ok(mut state) = self.reports.lock() {
@@ -507,10 +515,27 @@ impl ServedModel {
             VariableAccessSpecification::ListOfVariable(items) => items.iter().any(|item| {
                 matches!(&item.variable_specification,
                     VariableSpecification::Name(name)
-                        if self.controls.item(name, true).is_some() || self.block_attribute(name).is_some())
+                        if self.controls.item(name, true).is_some() || self.block_attribute(name).is_some()
+                            || self.settings_item(name).is_some_and(|(_, locus)| !matches!(locus, crate::setting_groups::Locus::SetEdit(_))))
             }),
             VariableAccessSpecification::VariableListName(_) => false,
         }
+    }
+
+    /// The device of the setting groups and what an item names there, when it is an item of a device's SGCB or a setting value with FC SE.
+    fn settings_item(&self, name: &ObjectName) -> Option<(usize, crate::setting_groups::Locus)> {
+        let ObjectName::DomainSpecific(object) = name else {
+            return None;
+        };
+        let item = object.item_id.0.as_str();
+        self.settings
+            .iter()
+            .enumerate()
+            .find_map(|(index, device)| {
+                (device.device() == object.domain_id.0)
+                    .then(|| device.locate(item).map(|locus| (index, locus)))
+                    .flatten()
+            })
     }
 
     /// The block and the attribute that an item names, if it is an attribute of a report control block (`node$RP$name$attribute` or
@@ -529,7 +554,8 @@ impl ServedModel {
             VariableAccessSpecification::ListOfVariable(items) => items.iter().any(|item| {
                 matches!(&item.variable_specification,
                     VariableSpecification::Name(name)
-                        if self.controls.item(name, false).is_some() || self.block_attribute(name).is_some())
+                        if self.controls.item(name, false).is_some() || self.block_attribute(name).is_some()
+                            || self.settings_item(name).is_some())
             }),
             VariableAccessSpecification::VariableListName(_) => false,
         }
@@ -558,6 +584,15 @@ impl ServedModel {
                 }
                 _ => (None, None),
             };
+            // The setting values with FC SE are read by the VMD; only the SGCB is answered here.
+            let settings = match &item.variable_specification {
+                VariableSpecification::Name(name) => {
+                    self.settings_item(name).filter(|(_, locus)| {
+                        !matches!(locus, crate::setting_groups::Locus::SetEdit(_))
+                    })
+                }
+                _ => None,
+            };
             if let Some((object, _)) = control {
                 if let Some(slot) = answers.get_mut(index) {
                     *slot = Some(self.controls.select_read(now, peer.id, object));
@@ -566,6 +601,14 @@ impl ServedModel {
                 let result = match self.reports.lock() {
                     Ok(state) => state.read_attribute(block, &attribute),
                     Err(_) => AccessResult::Failure(DataAccessError::TEMPORARILY_UNAVAILABLE),
+                };
+                if let Some(slot) = answers.get_mut(index) {
+                    *slot = Some(result);
+                }
+            } else if let Some((device, locus)) = settings {
+                let result = match self.settings.get_mut(device) {
+                    Some(device) => device.read(now, locus),
+                    None => AccessResult::Failure(DataAccessError::OBJECT_NON_EXISTENT),
                 };
                 if let Some(slot) = answers.get_mut(index) {
                     *slot = Some(result);
@@ -627,6 +670,10 @@ impl ServedModel {
                 }
                 _ => (None, None),
             };
+            let settings = match &item.variable_specification {
+                VariableSpecification::Name(name) => self.settings_item(name),
+                _ => None,
+            };
             if let Some((object, component)) = control {
                 let answer = self.controls.write(now, peer.id, object, component, data);
                 if let Some(slot) = answers.get_mut(index) {
@@ -638,6 +685,18 @@ impl ServedModel {
                     Err(_) => {
                         WriteResponseItemItem::Failure(DataAccessError::TEMPORARILY_UNAVAILABLE)
                     }
+                };
+                if let Some(slot) = answers.get_mut(index) {
+                    *slot = Some(answer);
+                }
+            } else if let Some((device, locus)) = settings {
+                let client = igs_iec61850_mms_core::control::ClientId(peer.id.0);
+                let answer = match self.settings.get_mut(device) {
+                    Some(device) => match device.write(&self.updater, now, client, locus, data) {
+                        Ok(()) => WriteResponseItemItem::Success,
+                        Err(error) => WriteResponseItemItem::Failure(error),
+                    },
+                    None => WriteResponseItemItem::Failure(DataAccessError::OBJECT_NON_EXISTENT),
                 };
                 if let Some(slot) = answers.get_mut(index) {
                     *slot = Some(answer);

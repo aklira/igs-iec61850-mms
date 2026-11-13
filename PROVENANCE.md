@@ -1085,8 +1085,8 @@ silent, to be confirmed by an observation test against other implementations.
 - **Declaration**: the `SettingControl` is kept in the configuration (`Configuration.setting_groups`): the device, `numOfSGs` (at least one,
   default one) and `actSG` (from one to `numOfSGs`, default one). An out-of-range value is refused (`SCL-003`). Before this change it was
   refused as not built (SCOPE-002), which lost it.
-- **Not done (O3)**: the services of the setting group control block (SelectActiveSG, SelectEditSG, SetEditSGValue, ConfirmEditSGValues,
-  GetSGCBValues) are declared services, so they are refused (SCOPE-002); the values of SG and SE are read, and their writes are refused
+- **Served (O3, D-050)**: the services of the setting group control block are served from the SGCB of the device. The values with FC SG and SE
+  are read as before; the writes of SE are refused unless the client holds the editing (see D-050).
   (SE is not writable without the services).
 - **Tests**: `model.rs`, `a_setting_object_takes_the_variant_of_its_device` (SP without groups; SG and SE with them, no repeated attribute);
   `scl_build.rs`, a device with a `SettingControl` builds with `LLN0$SG$MltLev$setVal` and `LLN0$SE$MltLev$setVal`, its declaration is kept,
@@ -1139,9 +1139,13 @@ silent, to be confirmed by an observation test against other implementations.
     it (§16.3.3). `ResvTms` reads its value while the editing is held, zero when it is free.
 - **Decisions where the text is open**: the duration of the reservation is a local choice, since the SCL file does not give it in this
   release; `EditSG` returns to zero after a confirmation (the text does not say what it holds afterwards).
-- **Not done (the served part)**: the SGCB as a named component of LLN0 in the served model (its reads with GetSGCBValues, its writes as
-  SelectActiveSG, SelectEditSG and ConfirmEditSGValues); the values of the groups (the active values read from FC SG, the edited values
-  written with FC SE, the storage of each group); the Owner of the reservation. Until then the services stay refused (SCOPE-002).
+- **Served part (this change)**: the SGCB is the named component `LLN0$SP$SGCB` of its device (8-1 table 71): a read gives the structure
+  (GetSGCBValues); the writes of `ActSG`, `EditSG` and `CnfEdit` are SelectActiveSG, SelectEditSG and ConfirmEditSGValues; a write of a
+  value with FC SE is SetEditSGValue, which the holder of the editing makes. The values of the groups are kept per group in the served
+  device (`setting_groups.rs`): the values with FC SG show the active group, the values with FC SE the group being edited; a confirmation
+  stores the edited values into their group, and the storage is complete at once (`CnfEdit` goes back to FALSE). A lost association releases
+  the editing. The reservation's `ResvTms` reads its value while it is held. The SGCB is not listed by GetNameList in this release (a
+  decision: the structure is answered by name, not by the VMD).
 - **Tests**: `tests/settings.rs` (nine, with controlled time): the initial state, the active selection and its date, the editing reservation
   and its cancellation, the holder's writes, the confirmation (the overwrite, the release, the re-activation), a confirmation of another
   group, the refusals of a confirmation, the expiry of the reservation, the loss of the holder.

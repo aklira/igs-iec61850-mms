@@ -616,12 +616,12 @@ The agent does not wait for these; it records the impact and continues with what
 | V2 Documentation, examples, binaries | [x] |
 | V3 Robustness and performance evidence | [x] |
 | Q1 Double-point and tap-command basic types | [x] `Dbpos`, `Tcmd`, the trigger, option and entry types done, with an SCL breaker check (D-042, D-043, docs/ai-log/Q1.md); `PhyComAddr` stays refused by decision |
-| Q2 Classes with variants (setting groups) | [x] SP, or SG and SE with a `SettingControl`; the SGCB services stay with O3 (D-046) |
+| Q2 Classes with variants (setting groups) | [x] SP, or SG and SE with a `SettingControl` (D-046); the SGCB services are O3 |
 | Q3 Arrays and enumerations chosen by the instance | [x] arrays with the size of the instance; enumerations are named for every standard attribute (D-047); element access stays refused |
 | Q4 Buffered reports: general interrogation and reservation | [x] core, server, client and the bench row against the reference peer (D-044, docs/interop.md matrix C4, docs/ai-log/Q4.md) |
 | Q5 Log services | [ ] core done: log buffer, queries, log control block (D-045, docs/ai-log/Q5.md); the MMS journal services (ReadJournal, LCB and LOG on the server) wait for a phase N in `igs-iso9506-mms` |
 | Q6 File services | [ ] MMS part done locally (N8 of igs-iso9506-mms, D-049): GetFile, GetFileAttributeValues, DeleteFile; the IEC file class in the SCL model and SetFile stay open |
-| O3 Setting groups: SGCB state machine (core); the served SGCB and its writes open | [ ] core done (D-050, docs/ai-log/O3.md) |
+| O3 Setting groups: the SGCB, its services and the values of the groups | [x] (D-050, docs/ai-log/O3.md; the Owner is not in table 71) |
 | R1 Legal review and release ⛔ | [ ] |
 
 Suggested order: P1, P3, P6, P5, F1, F2, F4, N1–N4 (M0), P2, P4, F3, A1–A7, S1–S3, D1 (M1), N5,
