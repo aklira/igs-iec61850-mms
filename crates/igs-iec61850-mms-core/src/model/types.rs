@@ -12,9 +12,10 @@
 use igs_iso9506_mms_codec::mms::TypeDescription;
 
 use crate::acsi::{
-    describe_boolean, describe_check_conditions, describe_enumeration, describe_float32,
-    describe_octets, describe_quality, describe_signed, describe_timestamp, describe_unicode,
-    describe_unsigned, describe_visible, SignedInteger, UnsignedInteger,
+    describe_boolean, describe_check_conditions, describe_coded_enum, describe_enumeration,
+    describe_float32, describe_octets, describe_quality, describe_signed, describe_timestamp,
+    describe_unicode, describe_unsigned, describe_visible, SignedInteger, UnsignedInteger,
+    DOUBLE_POSITION_SIZE,
 };
 use crate::catalogue;
 
@@ -42,6 +43,8 @@ pub fn basic(name: &str) -> Option<TypeDescription> {
         "Timestamp" => describe_timestamp(),
         "Quality" => describe_quality(),
         "Check" => describe_check_conditions(),
+        // The double-point status: a coded enumeration of two bits (7-2 Table 24, 8-1 §8.1.2.3).
+        "Dbpos" => describe_coded_enum(DOUBLE_POSITION_SIZE),
         _ => return None,
     })
 }

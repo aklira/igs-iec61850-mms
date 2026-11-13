@@ -467,6 +467,60 @@ M0 = phases P, F, N1–N4; M1 = phases A, S and D1; M2 = N5, D2–D6; M3 = phase
   held (SEC-001, SEC-002).
 - **O5 — Embedded SNTP client** (TIME-002, TIME-003).
 
+### Phase Q — Gaps that block the server and the gateway (added 2026-11-13)
+
+Found when the product uses were checked against `docs/capabilities.md`: an unmapped type refuses the whole logical
+node, and `SCL-003` refuses the whole configuration (`scl/build.rs`). An IED with a breaker (`XCBR.Pos`, a DPC) cannot
+be served today. Order: Q1, Q4, Q5, Q2, Q6, Q3. O1, O2 and O3 move into this phase when their task starts.
+
+**Q1 — Double-point and tap-command basic types**
+- Depends: A2, S3.
+- Read: 7-2 Table 24 (DpStatusKind, the values of `Dbpos`) and Table 23 (StepControlKind, the values of `Tcmd`);
+  8-1 §8.1.2.1 and §8.1.2.3 (coded enumerations as bit strings). The prepared 7-2 text is in
+  `~/Dev/norm_preparation/docs/spec/7-2`.
+- Produce: `Dbpos` as a 2-bit coded enumeration, `Tcmd` as a 2-bit coded enumeration; typed helpers with names; SCL
+  objects with `Dbpos` (DPS, DPC, `XCBR.Pos`) build and are served; read and write refusals kept where the control
+  machine is not yet written (K). The other basic types (`TrgOps`, `OptFlds`, `SvOptFlds`, `EntryID`, `EntryTime`,
+  `PhyComAddr`) stay refused until their clauses are read in this task.
+- Done when: vectors for each value of both types, an SCL test with a breaker that builds, and the row of
+  `docs/capabilities.md` updated.
+
+**Q2 — Classes with variants (setting groups)**
+- Depends: Q1, S3.
+- Read: the variant rules of 7-3 (not in the prepared texts; read from the purchased PDF) and 8-1 §16 for SGCB.
+- Produce: the variant chosen from the configuration, served attributes of the chosen variant; refusal kept for any
+  variant not chosen.
+- Done when: an SCL with a setting-group object builds; the variant is named in the test.
+
+**Q3 — Arrays and enumerations chosen by the instance**
+- Depends: Q1, A2.
+- Read: 8-1 §8.1.3 for arrays (sizes from `size_attribute`), 7-2 for the enumerations of controllable objects.
+- Produce: arrays served with their length, enumerations named by the data object (`underlying_type`) where the
+  namespace gives it.
+- Done when: a served array reads and writes with its length checked; the refusals left are listed in the capabilities.
+
+**Q4 — Buffered reports: general interrogation and reservation**
+- Depends: B2.
+- Read: 17.2.3.2.3.4 (figure 30, general interrogation, prepared text marks it missing: transcribe from the PDF) and
+  the reservation of 17.2.4.5 for buffered blocks.
+- Produce: GI on a buffered block (every member reported with the reason, into the buffer), reservation of a buffered
+  block with the owner rules of URCB (D-024) applied to BRCB.
+- Done when: AT-10 extended with GI and reservation tests; a reconnecting SCADA client receives the full state
+  without reading every member; bench row against the reference peer.
+
+**Q5 — Log services (promotes O2)**
+- Depends: S3, D5.
+- Read: 8-1 §17.3 (log control blocks, readJournal) and the log model of 7-2 Clause 17.
+- Produce: log control blocks served from SCL, readJournal by time and by entry, log status values, the gateway
+  replays missed events from its downstream log.
+- Done when: the server answers QueryLogByTime and QueryLogAfter; a client recovers events after a lost association.
+
+**Q6 — File services (promotes O1)**
+- Depends: N2.
+- Read: 8-1 §23 (GetFile, SetFile, DeleteFile, GetFileAttributeValues).
+- Produce: the four services in both directions; disturbance records (COMTRADE) and configuration files as files.
+- Done when: the client downloads a file from the reference file example and the server serves one.
+
 ### Phase V — Verification, documentation, release
 
 **V1 — Capability statements**
@@ -561,8 +615,14 @@ The agent does not wait for these; it records the impact and continues with what
 | V1 Capability statements | [x] |
 | V2 Documentation, examples, binaries | [x] |
 | V3 Robustness and performance evidence | [x] |
+| Q1 Double-point and tap-command basic types | [ ] `Dbpos` done (D-042, docs/ai-log/Q1.md); `Tcmd` and the other types open |
+| Q2 Classes with variants (setting groups) | [ ] |
+| Q3 Arrays and enumerations chosen by the instance | [ ] |
+| Q4 Buffered reports: general interrogation and reservation | [ ] |
+| Q5 Log services | [ ] |
+| Q6 File services | [ ] |
 | R1 Legal review and release ⛔ | [ ] |
 
 Suggested order: P1, P3, P6, P5, F1, F2, F4, N1–N4 (M0), P2, P4, F3, A1–A7, S1–S3, D1 (M1), N5,
-D2–D6 (M2), P7, B1, B2, K1–K3, E1–E3, G1, G2, V1–V3 (M3), R1. Fuzz targets are added as each
+D2–D6 (M2), P7, B1, B2, K1–K3, E1–E3, G1, G2, V1–V3 (M3), Q1, Q4, Q5, Q2, Q6, Q3 (M4), R1. Fuzz targets are added as each
 decoder lands.

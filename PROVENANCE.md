@@ -958,6 +958,25 @@ silent, to be confirmed by an observation test against other implementations.
 - **Not done here**: the generated files were not regenerated; their headers keep the reference to "NOTICE at the root", which is true for the
   repository.
 
+### D-042 — `Dbpos` as a two-bit coded enumeration (task Q1)
+
+- **Decision**: the basic type `Dbpos` (the status of a double-point object: DPS `stVal`, DPC `stVal`, `XCBR.Pos`) is the coded enumeration
+  DpStatusKind of two bits, with the four literals of 7-2 Table 24: `intermediate-state` 0, `off` 1, `on` 2, `bad-state` 3. Its MMS type is a bit
+  string of two bits (`describe_coded_enum(DOUBLE_POSITION_SIZE)`), read and written with `DoublePosition` in `acsi.rs`. A read ignores the bits past
+  the two of the type (§8.1.2.1).
+- **Why**: a logical node with a `Dbpos` attribute was refused whole (`UnmappedType`), and the SCL build is all or nothing (`SCL-003`), so a breaker
+  could not be served.
+- **Sources**: IEC 61850-7-2 Table 24 (prepared text, `docs/spec/7-2`), 8-1 §8.1.2.1 and §8.1.2.3 (the coded enumeration as a bit string, most
+  significant bit first), and the coded enumeration size rule of D-004.
+- **Confidence**: high for the size (the largest value is 3) and the bit order (the same rule as the other coded enumerations, with vectors); high
+  for the literals (Table 24 read directly). Medium for the reading of a longer bit string, which follows D-004.
+- **Not done**: `Tcmd` (StepControlKind, Table 23 of 7-2) is the same mechanism and stays open under Q1. The control of a `Dbpos` (write of
+  `ctlVal`) is refused until task K writes its control machine, as before.
+- **Tests**: `acsi.rs`, the vectors of the four values and the reading of extra bits; `tests/model.rs`, a breaker position built with its two-bit
+  status at zero, and the refusal of `BrcbTrk` (which holds `TrgOps` and `EntryID`) with its path.
+- **Not verified**: an end-to-end SCL file with a breaker was not built; the SCL build reaches the same `LogicalNode::new` call, so the refusal is
+  removed there too, but this is not run.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

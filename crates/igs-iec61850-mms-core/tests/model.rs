@@ -17,7 +17,8 @@ use igs_iec61850_mms_core::model::layout::{layout, IDENTIFIER_LIMIT};
 use igs_iec61850_mms_core::model::{
     is_required, DataObjectSpec, LogicalDevice, LogicalNode, ModelError, Node, ServerModel,
 };
-use igs_iso9506_mms_codec::mms::{Data, TypeDescription, TypeSpecification};
+use igs_iso9506_mms_codec::mms::{Data, Integer32, TypeDescription, TypeSpecification};
+use igs_iso9506_mms_codec::schema::BitString;
 
 /// The mandatory data objects of a class, with no attribute: the base of every test node.
 fn required(class: &str) -> Vec<DataObjectSpec> {
@@ -276,16 +277,38 @@ fn the_initial_value_conforms_to_the_layout() {
 }
 
 #[test]
+fn the_position_of_a_breaker_is_a_two_bit_double_point() {
+    // The position of a breaker is a DPC whose status is a Dbpos (7-2 Table 24): a bit string of two bits, zero
+    // at the start.
+    let specs = with("XCBR", "", vec![]);
+    let node = LogicalNode::new("XCBR1", "XCBR", &specs).expect("the node is valid");
+    let layout = layout(&node, IDENTIFIER_LIMIT).unwrap();
+    let stval = layout
+        .variables
+        .iter()
+        .find(|v| v.name == "XCBR1$ST$Pos$stVal")
+        .expect("the status of the position is a variable");
+    assert_eq!(stval.ty, TypeDescription::BitString(Integer32(2)));
+    assert_eq!(
+        value_at(&layout.root_value, &stval.path),
+        &Data::BitString(BitString {
+            unused: 6,
+            bytes: vec![0]
+        })
+    );
+}
+
+#[test]
 fn a_type_without_a_mapping_is_refused_with_its_path() {
-    // The position of a double-point object is a Dbpos, a type the mapping does not resolve yet. The object is
-    // given first, so that its error is the first one found.
-    let mut specs = vec![DataObjectSpec::new("Pos")];
-    specs.extend(with("XCBR", "Pos", vec![]));
-    let refused = LogicalNode::new("XCBR1", "XCBR", &specs);
+    // The tracking object of a buffered block holds an entry identifier and trigger options, types the mapping
+    // does not resolve yet. The object is given first, so that its error is the first one found.
+    let mut specs = vec![DataObjectSpec::new("BrcbTrk")];
+    specs.extend(with("LTRK", "BrcbTrk", vec![]));
+    let refused = LogicalNode::new("LTRK1", "LTRK", &specs);
     assert!(
         matches!(
             &refused,
-            Err(ModelError::UnmappedType { path, type_name }) if path == "XCBR1.Pos.stVal" && type_name == "Dbpos"
+            Err(ModelError::UnmappedType { path, .. }) if path.starts_with("LTRK1.BrcbTrk.")
         ),
         "found {refused:?}"
     );

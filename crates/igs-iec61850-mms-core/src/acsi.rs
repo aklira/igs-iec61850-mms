@@ -836,6 +836,71 @@ pub fn describe_coded_enum(size: u8) -> TypeDescription {
     TypeDescription::BitString(Integer32(i64::from(size)))
 }
 
+/// The size in bits of a `Dbpos`: the largest standardised value of DpStatusKind is 3 (§8.1.2.3).
+pub const DOUBLE_POSITION_SIZE: u8 = 2;
+
+/// The double-point status of IEC 61850-7-2 Table 24 (DpStatusKind, the form of a `Dbpos`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoublePosition {
+    /// Value 0: the equipment is in an intermediate state.
+    IntermediateState,
+    /// Value 1: the equipment is open.
+    Off,
+    /// Value 2: the equipment is closed.
+    On,
+    /// Value 3: the server cannot tell whether the equipment is open, closed or in an intermediate state.
+    BadState,
+}
+
+impl DoublePosition {
+    /// The value of the literal in the namespace of IEC 61850-7-2.
+    pub fn value(self) -> u32 {
+        match self {
+            Self::IntermediateState => 0,
+            Self::Off => 1,
+            Self::On => 2,
+            Self::BadState => 3,
+        }
+    }
+
+    /// The name of the literal in the namespace of IEC 61850-7-2.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::IntermediateState => "intermediate-state",
+            Self::Off => "off",
+            Self::On => "on",
+            Self::BadState => "bad-state",
+        }
+    }
+
+    fn from_value(value: u32) -> Option<Self> {
+        match value {
+            0 => Some(Self::IntermediateState),
+            1 => Some(Self::Off),
+            2 => Some(Self::On),
+            3 => Some(Self::BadState),
+            _ => None,
+        }
+    }
+}
+
+/// A double-point status as an MMS bit string of two bits (`Dbpos`, 8-1 §8.1.2.3).
+pub fn double_position_to_data(position: DoublePosition) -> Result<Data, AcsiError> {
+    coded_enum_to_data(position.value(), DOUBLE_POSITION_SIZE)
+}
+
+/// Reads a double-point status from the bit string the peer sent. The bits past the two of the type are ignored
+/// (§8.1.2.1); a value outside the four literals cannot occur and is refused.
+pub fn double_position_from_data(data: &Data) -> Result<DoublePosition, AcsiError> {
+    let value = coded_enum_from_data(data, DOUBLE_POSITION_SIZE)?;
+    DoublePosition::from_value(value).ok_or(AcsiError::OutOfRange {
+        ty: "double position",
+        min: 0,
+        max: 3,
+        value: i128::from(value),
+    })
+}
+
 /// The type description of an octet string of at most `max` octets.
 pub fn describe_octets(max: i64) -> TypeDescription {
     TypeDescription::OctetString(Integer32(max))
@@ -1069,6 +1134,49 @@ mod tests {
         // Negative: private to the implementation.
         assert_eq!(classify(-3, orcat()), Enumerated::Private(-3));
         assert_eq!(enumeration_from_data(&enumeration_to_data(-3)), Ok(-3));
+    }
+
+    #[test]
+    fn a_double_position_is_two_bits_with_the_values_of_table_24() {
+        // The size is the number of bits of the largest standardised value, 3.
+        assert_eq!(coded_enum_size(3), DOUBLE_POSITION_SIZE);
+        // The four literals of DpStatusKind, most significant bit first, in the first two bits of the octet.
+        let vectors = [
+            (DoublePosition::IntermediateState, 0x00),
+            (DoublePosition::Off, 0x40),
+            (DoublePosition::On, 0x80),
+            (DoublePosition::BadState, 0xC0),
+        ];
+        for (position, octet) in vectors {
+            assert_eq!(
+                double_position_to_data(position),
+                Ok(Data::BitString(BitString {
+                    unused: 6,
+                    bytes: vec![octet]
+                }))
+            );
+            assert_eq!(
+                double_position_from_data(&double_position_to_data(position).unwrap()),
+                Ok(position)
+            );
+        }
+        assert_eq!(DoublePosition::On.name(), "on");
+        assert_eq!(DoublePosition::BadState.value(), 3);
+    }
+
+    #[test]
+    fn a_double_position_read_ignores_the_bits_past_its_size() {
+        // The first two bits are 10 (on); the six bits after them are ignored (§8.1.2.1).
+        let data = Data::BitString(BitString {
+            unused: 0,
+            bytes: vec![0b1011_1111],
+        });
+        assert_eq!(double_position_from_data(&data), Ok(DoublePosition::On));
+        // A value that is not a bit string is refused with its type.
+        assert!(matches!(
+            double_position_from_data(&Data::Integer(2)),
+            Err(AcsiError::WrongType { .. })
+        ));
     }
 
     #[test]
