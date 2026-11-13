@@ -49,6 +49,8 @@ pub fn profile() -> Profile {
         logical_nodes: true,
         data_sets: false,
         arrays: false,
+        // The log services are not declared: the served model holds no journal at run time (N7 of igs-iso9506-mms).
+        logs: false,
     })
 }
 
