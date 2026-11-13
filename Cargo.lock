@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "igs-iso9506-mms"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "clap",
  "igs-iso9506-mms-codec",
@@ -174,11 +174,11 @@ dependencies = [
 
 [[package]]
 name = "igs-iso9506-mms-codec"
-version = "1.1.0"
+version = "1.2.0"
 
 [[package]]
 name = "igs-iso9506-mms-link"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "igs-iso9506-mms-codec",
 ]
