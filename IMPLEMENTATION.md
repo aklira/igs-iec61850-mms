@@ -549,6 +549,85 @@ be served today. Order: Q1, Q4, Q5, Q2, Q6, Q3. O1, O2 and O3 move into this pha
   release of `igs-iso9506-mms`.
 - Done when: a maintainer approves and publishes.
 
+### Phase X — Production readiness (added 2026-11-14, milestone M5)
+
+The library is not ready for production use. M3 covers the feature set of the standard for the products in
+`SPECIFICATIONS.md`; M5 closes what a deployed station, a SCADA client or a gateway needs beyond it. Each task
+names what it closes. A task may end with an item excluded from the statements of conformance, but only by a
+recorded user decision (section 5), never by silence.
+
+**X1 — Interop with deployed peers**
+- Depends: E3 (needs an Edition 1 peer or captures from field devices, section 5).
+- Produce: bench rows against each peer the product must work with, in `docs/interop.md`; the reverse direction
+  of buffered reports (the reference client receives the buffered reports of our server); the resumption of a
+  buffered block after a lost association against the reference server.
+- Done when: every peer named in the PIXIT passes its rows, or the gap is listed in `docs/capabilities.md` with
+  the user's decision.
+
+**X2 — Journal services over MMS**
+- Depends: phase N of `igs-iso9506-mms` (N7 done locally, under R1 of that repository).
+- Produce: log control blocks served over MMS; the journal fed from the core `Log`; ReadJournal on the server;
+  the gateway replay of logs (Q5 IEC side); the class `journal` listed in GetNameList (G14, error 82 today).
+- Done when: bench rows for ReadJournal and the log control block pass against the reference peer.
+
+**X3 — File services in the model**
+- Depends: N8 of `igs-iso9506-mms` (done locally).
+- Produce: the IEC file class in the SCL model (Q6); SetFile (ObtainFile) served or refused by decision; bench
+  rows for GetFile, GetFileAttributeValues and DeleteFile.
+- Done when: an SCL file with a file class builds and its services pass the bench.
+
+**X4 — Remaining services of the setting group control block**
+- Depends: O3.
+- Produce: `Owner` served (table 71 of 8-1 or its decision); SGCB listed in GetNameList; the same bench rows as
+  O3 against the reference peer.
+- Done when: the rows pass and `docs/capabilities.md` has no open O3 item.
+
+**X5 — Security profile**
+- Depends: O4; decision in section 5 on the security scope.
+- Produce: either the TLS of IEC 62351-3 conforms (the cipher suites G17, renegotiation G18 and certificate size
+  G19 closed in `igs-iso9506-mms`), or the statement excludes them with the user's decision; a decision on
+  IEC 62351-4 and IEC 62351-6 (held and implemented, or excluded from the products).
+- Done when: the statement of conformance matches the implementation, with no inherited gap unrecorded.
+
+**X6 — Time synchronisation in the PIXIT**
+- Depends: O5.
+- Produce: the choice between host synchronisation and the embedded SNTP client written in the PIXIT draft (V1);
+  a decision on PTP (IEC/IEEE 61850-9-3, optional); the leap-second announcement of the server carried into the
+  stamps (D-052 limitation).
+- Done when: the PIXIT states the time source and its accuracy, and the leap-second behaviour is tested.
+
+**X7 — Statements of conformance**
+- Depends: V1.
+- Produce: the PICS, MICS and PIXIT drafts written by `cargo xtask statements`, not only the capability table.
+- Done when: each row of the three drafts names an existing test or a recorded decision.
+
+**X8 — Robustness on peer input and under load**
+- Depends: V3.
+- Produce: fuzz targets extended to the new decoders (sntp, journal and file services when they land); a review
+  of every panic, unwrap and unchecked index reachable from peer input (RUN-002); the RUN-004 measurement of
+  contention under multi-client reporting load, with its workload and hardware recorded; a soak test with
+  repeated association losses and reconnections.
+- Done when: fuzzing runs clean for the recorded duration, the soak test passes, and the measurements are in
+  `docs/` with their conditions.
+
+**X9 — API and versioning**
+- Depends: X1 to X8.
+- Produce: the public API reviewed item by item (names, error types, `non_exhaustive` where it may grow); a
+  semantic versioning policy written in `CHANGELOG.md`; the 0.x to 1.0.0 change list.
+- Done when: `cargo semver-checks` (or an equivalent recorded review) reports no unplanned break since the last
+  release.
+
+**X10 — Operations documentation**
+- Depends: X1 to X9.
+- Produce: a deployment guide (configuration, certificates, time source, logs, the behaviour after a lost peer),
+  and the examples built in CI.
+- Done when: a station can be configured and run from the guide alone, checked by a reader who did not write it.
+
+**X11 — Production release gate** ⛔
+- Depends: X1 to X10 and R1.
+- Gate: a maintainer approves the production statement, the excluded items, and the publication of version 1.0.0.
+- Done when: the maintainer approves and publishes; the excluded items are listed in the PIXIT.
+
 ---
 
 ## 5. Decisions that stay with the user
@@ -562,6 +641,11 @@ The agent does not wait for these; it records the impact and continues with what
 | Provide captures or access to RTE Edition 1 field devices | E3 limited to the bench peer |
 | Fill in the reference of the legal authorization in `CONTEXT.md` §10 | None for the work; needed for R1 |
 | Legal review, push and publication (R1) | Nothing leaves the machine |
+| Peers that the product must interoperate with, and the field captures for them (X1) | X1 limited to the bench peer |
+| Security scope for production: TLS suites and renegotiation, IEC 62351-4 and -6 (X5) | The statement excludes them and says so |
+| Time source for production and the PTP decision (X6) | The PIXIT states SNTP as the only source, PTP not implemented |
+| Whether `SetFile` and the owner of the setting groups are served (X3, X4) | Refused and listed as gaps |
+| Version 1.0.0 and the stability promise of the API (X9, X11) | The crate stays at 0.1.x |
 
 ---
 
@@ -625,7 +709,19 @@ The agent does not wait for these; it records the impact and continues with what
 | O4 Secured profile: TLS of the station under IEC 62351-3 (transport only) | [x] (D-051, docs/ai-log/O4.md; 62351-4 and 62351-6 not held) |
 | O5 Embedded SNTP client: requests, checks of the replies, accuracy from the root distance (TIME-002, TIME-003) | [x] (D-052, docs/ai-log/O5.md; PTP not implemented) |
 | R1 Legal review and release ⛔ | [ ] |
+| X1 Interop with deployed peers (E3, reverse buffered reports, resumption) | [ ] |
+| X2 Journal services over MMS (Q5 IEC side, G14) | [ ] |
+| X3 File services in the model (Q6: file class in SCL, SetFile decision) | [ ] |
+| X4 SGCB remainder: Owner, GetNameList (O3) | [ ] |
+| X5 Security profile: G17 to G19 and the decision on 62351-4 and -6 (O4) | [ ] |
+| X6 Time in the PIXIT: source, PTP decision, leap seconds (O5) | [ ] |
+| X7 PICS, MICS and PIXIT drafts written by the statements tool (V1) | [ ] |
+| X8 Robustness on peer input, load measurement, soak test (V3) | [ ] |
+| X9 API review and versioning, 1.0.0 change list | [ ] |
+| X10 Operations documentation (deployment guide, examples in CI) | [ ] |
+| X11 Production release gate ⛔ | [ ] |
 
 Suggested order: P1, P3, P6, P5, F1, F2, F4, N1–N4 (M0), P2, P4, F3, A1–A7, S1–S3, D1 (M1), N5,
-D2–D6 (M2), P7, B1, B2, K1–K3, E1–E3, G1, G2, V1–V3 (M3), Q1, Q4, Q5, Q2, Q6, Q3 (M4), R1. Fuzz targets are added as each
-decoder lands.
+D2–D6 (M2), P7, B1, B2, K1–K3, E1–E3, G1, G2, V1–V3 (M3), Q1, Q4, Q5, Q2, Q6, Q3 (M4), R1, then the production
+phase X: X4 and X3 first (only the sibling's N8 is needed, done locally), then X2 and X5 (the sibling's phase N and
+the decisions of section 5), X1 as soon as a peer is available, X6 and X7, X8, X9, X10, and X11 last. Fuzz targets are added as each decoder lands.
