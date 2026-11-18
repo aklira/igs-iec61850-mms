@@ -19,25 +19,30 @@ What the library does (see [`docs/capabilities.tsv`](docs/capabilities.tsv) for 
 
 - **Client**: typed discovery of devices, logical nodes and data objects; reads and writes; data sets (static and dynamic);
   unbuffered and buffered reports, with their configuration; controls (direct and select-before-operate, normal and enhanced
-  security).
+  security); the journal of a log (ReadJournal) and the files of a server.
 - **Server**: serves a model built in code or from an SCL file (ICD/CID subset), with consistent value updates per node; serves
-  data sets, unbuffered and buffered reports, and controls.
+  data sets, unbuffered and buffered reports, controls, arrays, setting groups (SGCB), logs (journals fed by their log control
+  blocks, GetLCBValues and SetLCBValues), and the files of a directory.
+- **Time**: the host clock with its declared quality, or the embedded SNTP client (accuracy from the root distance; leap second
+  announced by the server).
+- **Security**: TLS 1.2 and 1.3 with mutual authentication and a revocation list (IEC 62351-3, transport only; see the gaps below).
 - **Configuration**: SCL import with diagnostics (file, path, line), against the frozen 2007B schema; no external entities;
   atomic activation.
 - **Gateway**: one runtime with clients and a server, explicit mirrors, quality invalid when a downstream association is lost,
-  and forwarded controls.
+  forwarded controls, and the replay of a downstream journal (called by the application after a reconnection).
 
 What it does not do yet (details in [`docs/capabilities.md`](docs/capabilities.md)):
 
 - buffered reports: the owner (`Owner`) is not served, and a general interrogation restarted while being sent is not restarted;
 - Edition 1 interoperability is not tested against a peer;
-- no SNTP or PTP; the host clock is used with its declared quality;
-- no arrays, file services, setting groups, GOOSE or sampled values; the log model is in the core, its MMS journal services are not served yet;
-  declared services that are not executed are refused,
-  not dropped.
+- PTP is not implemented;
+- no GOOSE and no sampled values; SetFile is refused;
+- the TLS gaps G17 to G19, and IEC 62351-4 and -6 are not held;
+- the library is not released for production use yet: see [`docs/deployment.md`](docs/deployment.md) for the configuration, and
+  the production phase of [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 
-Conformance drafts (ACSI statement, PICS, MICS, PIXIT) are in [`docs/conformance-drafts.md`](docs/conformance-drafts.md). They are
-drafts for review, not a conformance claim.
+Conformance drafts (ACSI statement, MICS, PIXIT) are in [`docs/conformance`](docs/conformance). They are drafts for review,
+not a conformance claim.
 
 ## Using the crates
 
