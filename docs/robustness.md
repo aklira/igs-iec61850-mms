@@ -44,6 +44,21 @@ Each cycle opens an association, identifies, and ends it in one of three ways: a
 Not measured: the memory of the server over a campaign of hours, and the associations with reports enabled over the cycles. A longer campaign
 with those is for the maintainer.
 
+## Soak with reports enabled (`crates/igs-iec61850-mms/tests/soak_reports.rs`)
+
+Clients reserve and enable the unbuffered block RPT1 of an SCL model, change the status, and end their association in one of three ways (an
+orderly close, an abort, a drop without a word). Every 10 cycles a new client takes the block over and must receive a report.
+
+| Cycles | Checks | Failures | Reservations retried after a drop | Duration |
+| ---: | ---: | ---: | ---: | ---: |
+| 150 (default test) | 15 | 0 | 0 | 1.5 s |
+| 2 000 (`IGS_SOAK_REPORT_CYCLES=2000`) | 200 | 0 | 10 | 20 s |
+
+- A first version of the test, without the retry, failed 5 times in 2 000 cycles. Every failure followed a drop: the next association met the
+  reservation before the server had found the loss (D-059). The retry (up to one second) removes the failures; the count of retries is printed,
+  so that the latency is seen.
+- The orderly close does not show the race: 600 close-and-reconnect cycles, with and without a server change that was tried and not kept.
+
 ## Fuzzing (`fuzz/`, cargo-fuzz, nightly)
 
 Seven targets, each run for 60 seconds from its corpus. The first five are those of V3; `sntp_reply` and `file_store` are new.
@@ -111,5 +126,7 @@ With the default poll interval of the server (50 ms), four clients and 200 chang
 
 ## Open
 
-- The soak with associations that have reports enabled, and the memory of the server over a long campaign.
+- The reverse row of the log example reads its journal with no entry: the example asks after a time with no change (docs/interop.md).
+
+- The memory of the server over a long campaign (the soaks count the outcomes, not the memory).
 - The bench rows of the file services against the reference peer (X3): the reference example's directory convention is not known.
