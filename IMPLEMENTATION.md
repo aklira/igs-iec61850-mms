@@ -716,7 +716,7 @@ The agent does not wait for these; it records the impact and continues with what
 | X5 Security profile: G17 to G19 and the decision on 62351-4 and -6 (O4) | [ ] |
 | X6 Time in the PIXIT: source, PTP decision, leap seconds (O5) | [ ] |
 | X7 PICS, MICS and PIXIT drafts written by the statements tool (V1) | [ ] |
-| X8 Robustness on peer input, load measurement, soak test (V3) | [ ] |
+| X8 Robustness on peer input, load measurement, soak test (V3) | [~] review of the panics, hostile-peer and soak tests, fuzz targets for SNTP and the file store, all seven targets run 60 s clean; open: contention under reporting load (RUN-004), longer campaigns (docs/robustness.md, docs/ai-log/X8.md) |
 | X9 API review and versioning, 1.0.0 change list | [ ] |
 | X10 Operations documentation (deployment guide, examples in CI) | [ ] |
 | X11 Production release gate ⛔ | [ ] |

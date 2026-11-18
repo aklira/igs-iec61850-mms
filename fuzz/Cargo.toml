@@ -19,6 +19,8 @@ libfuzzer-sys = "0.4"
 igs-iec61850-mms-core = { path = "../crates/igs-iec61850-mms-core", features = ["scl"] }
 # The bit strings of the report options are the codec's, as the crate uses them.
 igs-iso9506-mms-codec = { path = "../../igs-iso9506-mms/crates/igs-iso9506-mms-codec" }
+# The file store of the server (X3) is the sibling crate's, fuzzed with the operations of the services.
+igs-iso9506-mms = { path = "../../igs-iso9506-mms/crates/igs-iso9506-mms" }
 
 [[bin]]
 name = "scl_parse"
@@ -51,6 +53,20 @@ bench = false
 [[bin]]
 name = "control_events"
 path = "fuzz_targets/control_events.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sntp_reply"
+path = "fuzz_targets/sntp_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "file_store"
+path = "fuzz_targets/file_store.rs"
 test = false
 doc = false
 bench = false
