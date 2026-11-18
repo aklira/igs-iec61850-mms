@@ -1214,6 +1214,28 @@ silent, to be confirmed by an observation test against other implementations.
   reference code); medium for the accuracy reading, since the standard gives no formula and the TISSUE was closed. The reading is
   conservative, and it is listed as an interpretation in `docs/capabilities.md`.
 
+### D-053 — The SGCB is listed by GetNameList; the owner of a buffered block is open (task X4; revises D-050)
+
+- **Sources**: IEC 61850-8-1 §16.1 and table 71 (the SGCB is a named component of LLN0 with FC SP, with six components: `NumOfSG`, `ActSG`,
+  `EditSG` (INT8U), `CnfEdit` (BOOLEAN), `LActTm` (Timestamp) and `ResvTms` (INT16U)). Observation of the reference peer, as a black box: the
+  MMS client of `igs-iso9506-mms` with the IEC profile lists the named variables of `server_example_sg`; they include `LLN0$SP$SGCB` and its
+  attributes `NumOfSG`, `ActSG`, `EditSG`, `CnfEdit` and `LActTm`, but not `ResvTms`.
+- **Decision**: the SGCB and its six attributes are named variables of their domain. GetNameList lists them, and GetVariableAccessAttributes gives
+  the structure of table 71. Their reads and writes are still answered by the setting group handler before the VMD sees them, so the VMD's own
+  read and write of these names are refused. This revises D-050, which kept the SGCB out of GetNameList.
+- **Difference of the peer**: `ResvTms` is in table 71, so it is listed. The peer's list does not have it. The bench records the difference and
+  does not require the peer to have it.
+- **Owner, not done**: the Owner is an attribute of the BRCB and the URCB, not of the SGCB (7-2 §17.2.2.18; the SGCB of table 71 has none; the
+  note of O3 stands). 8-1 §17.1 (the `Owner` attribute) says a V-Get of Owner returns the IP address of the application entity that reserved the
+  block: 4 octets for IPv4, 16 for IPv6; a NULL string for a preconfigured owner without a ClientLN, and for a dynamic client. Our BRCB returns an
+  empty octet string (a decision of D-044 and of the reports). Returning the address needs the network address of the association, which the
+  `Peer` of `igs-iso9506-mms` does not carry (its identifier and its AARQ identity only). That is a public API change in a published crate, so it
+  is a decision for the maintainer (section 5 of `IMPLEMENTATION.md`), not taken here.
+- **Tests**: `tests/setting_groups.rs::the_sgcb_and_its_attributes_are_named_in_the_domain_with_their_structure` (the names and the six components
+  over MMS); `bench/tests/test_x4_setting_groups.py` (the peer and our server list the SGCB; the capture of the peer decodes cleanly).
+- **Confidence**: high for the naming (the table and the peer agree, except `ResvTms`, which follows the table); high for the Owner reading of
+  8-1, but its encoding and its source address are not decided.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

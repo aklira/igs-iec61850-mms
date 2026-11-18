@@ -88,6 +88,12 @@ Each row names the tests that cover it; `cargo xtask statements --check` verifie
 | TIME-002 | Embedded SNTP client: mode 3 requests, mode 4 replies, checks of each reply (RFC 5905 subset) | Implemented (D-052); the host synchronisation is the other choice, declared in the PIXIT; PTP not implemented | `a_reply_that_is_not_for_the_request_is_refused` (crates/igs-iec61850-mms-core/tests/sntp.rs)<br>`the_client_sends_one_request_per_poll_interval` (crates/igs-iec61850-mms-core/tests/sntp.rs)<br>`the_offset_and_the_delay_follow_the_rfc_formulas` (crates/igs-iec61850-mms-core/tests/sntp.rs)<br>`a_reply_with_another_origin_does_not_synchronise_the_clock` (crates/igs-iec61850-mms/tests/sntp.rs)<br>`a_kiss_of_death_does_not_synchronise_the_clock` (crates/igs-iec61850-mms/tests/sntp.rs)<br>`a_server_that_does_not_answer_leaves_the_clock_not_synchronised` (crates/igs-iec61850-mms/tests/sntp.rs) |
 | TIME-003 | TimeAccuracy from the root dispersion of the SNTP reply (8-1 §6.4.2.2) | Implemented (D-052): the root distance, unadjusted, rounded up to bits of the fraction; above one second, not synchronised | `the_accuracy_is_the_bits_of_the_fraction_the_distance_covers` (crates/igs-iec61850-mms-core/tests/sntp.rs)<br>`the_root_distance_is_the_dispersion_plus_half_the_delay_rounded_up` (crates/igs-iec61850-mms-core/tests/sntp.rs)<br>`the_estimate_ages_out_after_max_age` (crates/igs-iec61850-mms-core/tests/sntp.rs)<br>`a_reply_with_a_root_distance_above_one_second_is_not_synchronised` (crates/igs-iec61850-mms-core/tests/sntp.rs) |
 
+## setting groups
+
+| Requirement | Item | State | Tests |
+| --- | --- | --- | --- |
+| SGCB-001 | The setting group control block: its structure and its six attributes are named in the domain (8-1 table 71, §16.1); its services are writes of its attributes | Implemented (D-050, D-053): the names and the structure are listed; the owner of the block (BRCB Owner) is open, see docs/capabilities.md | `the_sgcb_and_its_attributes_are_named_in_the_domain_with_their_structure` (crates/igs-iec61850-mms/tests/setting_groups.rs)<br>`the_editing_is_held_by_one_association_and_its_values_are_confirmed_into_the_group` (crates/igs-iec61850-mms/tests/setting_groups.rs) |
+
 ## logs
 
 | Requirement | Item | State | Tests |

@@ -359,6 +359,7 @@ impl ServedModel {
         }
         let controls = configured_controls(configuration, &updater)?;
         let settings = crate::setting_groups::devices_of(configuration, &updater);
+        crate::setting_groups::list(&mut vmd, &settings)?;
         Ok(Self {
             vmd,
             updater,

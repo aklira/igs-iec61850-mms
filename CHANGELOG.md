@@ -30,6 +30,8 @@ All notable changes to this project are recorded in this file. The format follow
 
 ### Added
 
+- The setting group control block is listed by GetNameList with its six attributes, and typed as a structure (8-1 table 71; D-053). The
+  reference peer does not list `ResvTms`; the bench records the difference.
 - Embedded SNTP client (TIME-002, TIME-003): `sntp` in the core builds the requests (mode 3), checks each reply (mode 4, origin,
   kiss-o'-death, leap indicator, stratum) and computes the offset and the delay of RFC 5905. The accuracy of the clock is its root
   distance, unadjusted and rounded up to bits of the fraction (8-1 §6.4.2.2); the clock is not synchronised without a reply and

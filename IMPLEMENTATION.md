@@ -711,8 +711,8 @@ The agent does not wait for these; it records the impact and continues with what
 | R1 Legal review and release ⛔ | [ ] |
 | X1 Interop with deployed peers (E3, reverse buffered reports, resumption) | [ ] |
 | X2 Journal services over MMS (Q5 IEC side, G14) | [ ] |
-| X3 File services in the model (Q6: file class in SCL, SetFile decision) | [ ] |
-| X4 SGCB remainder: Owner, GetNameList (O3) | [ ] |
+| X3 File services in the model (Q6: file class in SCL, SetFile decision) | [~] client commands added in igs-iso9506-mms (`files`, `get`, `delete`; uncommitted). Open: no bench row (the reference file example refuses every path tried), the server side is not started, the SCL file class has no source in the prepared texts (docs/ai-log/X3.md) |
+| X4 SGCB remainder: Owner, GetNameList (O3) | [~] names listed by GetNameList and checked against the peer (D-053, docs/ai-log/X4.md, bench row in docs/interop.md). Open: the Owner of the BRCB needs the address of the association, a decision on the `Peer` of igs-iso9506-mms |
 | X5 Security profile: G17 to G19 and the decision on 62351-4 and -6 (O4) | [ ] |
 | X6 Time in the PIXIT: source, PTP decision, leap seconds (O5) | [ ] |
 | X7 PICS, MICS and PIXIT drafts written by the statements tool (V1) | [ ] |

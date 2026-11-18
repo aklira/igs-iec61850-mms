@@ -14,10 +14,15 @@ use igs_iec61850_mms_core::acsi::timestamp_to_data;
 use igs_iec61850_mms_core::control::ClientId;
 use igs_iec61850_mms_core::model::layout::value_at;
 use igs_iec61850_mms_core::settings::{Refusal, Sgcb};
-use igs_iso9506_mms_codec::generated::types::{AccessResult, Data, DataAccessError};
+use igs_iso9506_mms::vmd::{Target, Variable, Vmd};
+use igs_iso9506_mms_codec::generated::types::{
+    AccessResult, Data, DataAccessError, Identifier, TypeDescription, TypeDescriptionStructure,
+    TypeDescriptionStructureComponentsItem, TypeSpecification, Unsigned8,
+};
 use igs_iso9506_mms_codec::mms::UtcTimestamp;
 
 use crate::clock::HostClock;
+use crate::model::ServeError;
 use crate::updates::{Change, UpdateError, Updater};
 use igs_iec61850_mms_core::time::ClockSource;
 
@@ -353,4 +358,100 @@ fn update_error(error: UpdateError) -> DataAccessError {
         UpdateError::TypeMismatch(_) => DataAccessError::TYPE_INCONSISTENT,
         _ => DataAccessError::OBJECT_VALUE_INVALID,
     }
+}
+
+/// The attributes of the SGCB with their MMS names, in the order of the structure (8-1 table 71).
+const ATTRIBUTES: [(Attribute, &str); 6] = [
+    (Attribute::NumOfSg, "NumOfSG"),
+    (Attribute::ActSg, "ActSG"),
+    (Attribute::EditSg, "EditSG"),
+    (Attribute::CnfEdit, "CnfEdit"),
+    (Attribute::LActTm, "LActTm"),
+    (Attribute::ResvTms, "ResvTms"),
+];
+
+/// The MMS type of an attribute of the SGCB (8-1 table 71: INT8U, BOOLEAN, Timestamp and INT16U).
+fn attribute_type(attribute: Attribute) -> TypeDescription {
+    match attribute {
+        Attribute::NumOfSg | Attribute::ActSg | Attribute::EditSg => {
+            TypeDescription::Unsigned(Unsigned8(8))
+        }
+        Attribute::CnfEdit => TypeDescription::Boolean,
+        Attribute::LActTm => TypeDescription::UtcTime,
+        Attribute::ResvTms => TypeDescription::Unsigned(Unsigned8(16)),
+    }
+}
+
+/// The attributes that a client may write through the VMD's type (the services of 8-1 §16.2 write them).
+fn attribute_writable(attribute: Attribute) -> bool {
+    matches!(
+        attribute,
+        Attribute::ActSg | Attribute::EditSg | Attribute::CnfEdit
+    )
+}
+
+/// A named variable of the SGCB, listed by the VMD: the structure, or one attribute. Its reads and writes are answered by the
+/// setting group handler before the VMD sees them (`ServedModel::read_with_controls`), so the VMD's own read and write are refused.
+struct SgcbVariable {
+    ty: TypeDescription,
+    writable: bool,
+}
+
+impl Variable for SgcbVariable {
+    fn type_description(&self) -> &TypeDescription {
+        &self.ty
+    }
+
+    fn is_writable(&self) -> bool {
+        self.writable
+    }
+
+    fn read(&self) -> Result<Data, DataAccessError> {
+        Err(DataAccessError::OBJECT_ACCESS_DENIED)
+    }
+
+    fn write(&mut self, _value: Data) -> Result<(), DataAccessError> {
+        Err(DataAccessError::OBJECT_ACCESS_DENIED)
+    }
+}
+
+/// Lists the SGCB of each device in its domain, as the structure `LLN0$SP$SGCB` and as each attribute `LLN0$SP$SGCB$ActSG` and so on.
+/// The reference peer lists the same names (8-1 §16.1). Its `ResvTms` is not in the peer's list, which the bench records as a
+/// difference of the peer.
+pub(crate) fn list(vmd: &mut Vmd, devices: &[DeviceSettings]) -> Result<(), ServeError> {
+    for device in devices {
+        let domain = vmd.name(&device.device)?;
+        let components = ATTRIBUTES
+            .iter()
+            .map(|(attribute, name)| TypeDescriptionStructureComponentsItem {
+                component_name: Some(Identifier((*name).to_string())),
+                component_type: TypeSpecification::TypeDescription(Box::new(attribute_type(
+                    *attribute,
+                ))),
+            })
+            .collect();
+        let structure = TypeDescription::Structure(TypeDescriptionStructure {
+            packed: None,
+            components,
+        });
+        let item = vmd.name(SGCB)?;
+        vmd.add_variable(
+            &Target::in_domain(domain.clone(), item),
+            Box::new(SgcbVariable {
+                ty: structure,
+                writable: false,
+            }),
+        )?;
+        for (attribute, name) in ATTRIBUTES {
+            let item = vmd.name(&format!("{SGCB}${name}"))?;
+            vmd.add_variable(
+                &Target::in_domain(domain.clone(), item),
+                Box::new(SgcbVariable {
+                    ty: attribute_type(attribute),
+                    writable: attribute_writable(attribute),
+                }),
+            )?;
+        }
+    }
+    Ok(())
 }

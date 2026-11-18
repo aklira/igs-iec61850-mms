@@ -119,6 +119,18 @@ in the bench yet.
   which our client does not offer by default. The client's `--lenient-parameter-cbbs` option (A7) is needed for the peer, as for the
   data-access rows.
 
+## Matrix X4: the names of the SGCB, the reference peer against our server (task X4)
+
+`bench/tests/test_x4_setting_groups.py`: the MMS client of `igs-iso9506-mms` (IEC profile, lenient CBBs) lists the named variables of the
+domain of `server_example_sg` (the reference peer) and of our server (`igs61850-server --scl` with the settings file of the tests).
+
+| Row | Result |
+| --- | --- |
+| `LLN0$SP$SGCB` and its attributes `NumOfSG`, `ActSG`, `EditSG`, `CnfEdit`, `LActTm`: listed by both | Passes. The capture of the peer decodes without an error in tshark |
+| `LLN0$SP$SGCB$ResvTms`: listed by our server, not by the peer | Recorded difference. Table 71 of 8-1 gives `ResvTms` (INT16U) to the SGCB; the peer's list does not have it. We follow the table (D-053) |
+
+The reverse direction (the reference client reads the SGCB of our server) is not in the bench.
+
 ## Known gaps, with the task that closes each
 
 | Gap | Task |

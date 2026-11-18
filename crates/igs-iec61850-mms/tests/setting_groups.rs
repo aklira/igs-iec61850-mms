@@ -23,8 +23,10 @@ use igs_iso9506_mms::server::Server;
 use igs_iso9506_mms::vmd::Identity;
 use igs_iso9506_mms::Client;
 use igs_iso9506_mms_codec::generated::types::{
-    AccessResult, Data, DataAccessError, Identifier, ObjectName, ObjectNameDomainSpecific,
-    ReadRequest, VariableAccessSpecification, VariableAccessSpecificationListOfVariableItem,
+    AccessResult, Data, DataAccessError, GetNameListRequest, GetNameListRequestObjectScope,
+    GetVariableAccessAttributesRequest, Identifier, ObjectClass, ObjectClassBasicObjectClass,
+    ObjectName, ObjectNameDomainSpecific, ReadRequest, TypeDescription,
+    VariableAccessSpecification, VariableAccessSpecificationListOfVariableItem,
     VariableSpecification, WriteRequest, WriteResponseItemItem,
 };
 use igs_iso9506_mms_link::config::LinkConfig;
@@ -221,4 +223,84 @@ async fn the_editing_of_an_association_that_is_lost_is_released() {
         write(&other, "LLN0$SP$SGCB$EditSG", Data::Unsigned(2)).await,
         WriteResponseItemItem::Success
     );
+}
+
+/// The named variables of the domain LD1, every page of the answer.
+async fn names_of_ld1(client: &Client) -> Vec<String> {
+    let mut all = Vec::new();
+    let mut after: Option<Identifier> = None;
+    loop {
+        let page = tokio::time::timeout(
+            TIMEOUT,
+            client.get_name_list(GetNameListRequest {
+                object_class: ObjectClass::BasicObjectClass(
+                    ObjectClassBasicObjectClass::NAMED_VARIABLE,
+                ),
+                object_scope: GetNameListRequestObjectScope::DomainSpecific(Identifier(
+                    "LD1".to_string(),
+                )),
+                continue_after: after.clone(),
+            }),
+        )
+        .await
+        .unwrap()
+        .expect("the names are listed");
+        all.extend(page.list_of_identifier.iter().map(|name| name.0.clone()));
+        if !page.more_follows.unwrap_or(true) {
+            break;
+        }
+        after = page.list_of_identifier.last().cloned();
+    }
+    all
+}
+
+#[tokio::test]
+async fn the_sgcb_and_its_attributes_are_named_in_the_domain_with_their_structure() {
+    let (server, address) = start().await;
+    let client = connect(&address).await;
+
+    let names = names_of_ld1(&client).await;
+    for name in [
+        SGCB,
+        "LLN0$SP$SGCB$NumOfSG",
+        "LLN0$SP$SGCB$ActSG",
+        "LLN0$SP$SGCB$EditSG",
+        "LLN0$SP$SGCB$CnfEdit",
+        "LLN0$SP$SGCB$LActTm",
+        "LLN0$SP$SGCB$ResvTms",
+    ] {
+        assert!(
+            names.contains(&name.to_string()),
+            "{name} is listed by GetNameList"
+        );
+    }
+
+    // The structure has the six components of 8-1 table 71, in their order.
+    let attributes = tokio::time::timeout(
+        TIMEOUT,
+        client.get_variable_access_attributes(GetVariableAccessAttributesRequest::Name(
+            ObjectName::DomainSpecific(ObjectNameDomainSpecific {
+                domain_id: Identifier("LD1".to_string()),
+                item_id: Identifier(SGCB.to_string()),
+            }),
+        )),
+    )
+    .await
+    .unwrap()
+    .expect("the attributes are given");
+    let TypeDescription::Structure(structure) = attributes.type_description else {
+        panic!("the SGCB is a structure");
+    };
+    let components: Vec<String> = structure
+        .components
+        .iter()
+        .filter_map(|component| component.component_name.as_ref().map(|name| name.0.clone()))
+        .collect();
+    assert_eq!(
+        components,
+        ["NumOfSG", "ActSG", "EditSG", "CnfEdit", "LActTm", "ResvTms"]
+    );
+
+    client.close().await.unwrap();
+    server.shutdown().await;
 }
