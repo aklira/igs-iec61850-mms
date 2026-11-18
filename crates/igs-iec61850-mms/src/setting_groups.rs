@@ -392,12 +392,12 @@ fn attribute_writable(attribute: Attribute) -> bool {
 
 /// A named variable of the SGCB, listed by the VMD: the structure, or one attribute. Its reads and writes are answered by the
 /// setting group handler before the VMD sees them (`ServedModel::read_with_controls`), so the VMD's own read and write are refused.
-struct SgcbVariable {
-    ty: TypeDescription,
-    writable: bool,
+pub(crate) struct ListedVariable {
+    pub(crate) ty: TypeDescription,
+    pub(crate) writable: bool,
 }
 
-impl Variable for SgcbVariable {
+impl Variable for ListedVariable {
     fn type_description(&self) -> &TypeDescription {
         &self.ty
     }
@@ -437,7 +437,7 @@ pub(crate) fn list(vmd: &mut Vmd, devices: &[DeviceSettings]) -> Result<(), Serv
         let item = vmd.name(SGCB)?;
         vmd.add_variable(
             &Target::in_domain(domain.clone(), item),
-            Box::new(SgcbVariable {
+            Box::new(ListedVariable {
                 ty: structure,
                 writable: false,
             }),
@@ -446,7 +446,7 @@ pub(crate) fn list(vmd: &mut Vmd, devices: &[DeviceSettings]) -> Result<(), Serv
             let item = vmd.name(&format!("{SGCB}${name}"))?;
             vmd.add_variable(
                 &Target::in_domain(domain.clone(), item),
-                Box::new(SgcbVariable {
+                Box::new(ListedVariable {
                     ty: attribute_type(attribute),
                     writable: attribute_writable(attribute),
                 }),

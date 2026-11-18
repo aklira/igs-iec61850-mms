@@ -131,6 +131,22 @@ domain of `server_example_sg` (the reference peer) and of our server (`igs61850-
 
 The reverse direction (the reference client reads the SGCB of our server) is not in the bench.
 
+## Matrix X2: the log example of the reference peer against our server (reverse; task X2)
+
+`bench/tests/test_x2_logs_reverse.py`: our server, built with the SCL import, serves `bench/fixtures/example_log.cid` (the IED `TestIED`, the
+device `GenericIO`, the log control block `EventLog` on the journal `EventLog`, enabled). The reference example `iec61850_client_example_log`
+runs in the network namespace of our server, as a black box.
+
+| Row | Result |
+| --- | --- |
+| The association is accepted; each of the 4 requests is answered; the capture decodes without an error in tshark | Passes |
+| The example finds the log of its node, enables it, and reads its control block (`TestIEDGenericIO/LLN0$EventLog`: LogEna, LogRef, DatSet, the times and the entry identifiers) | Passes |
+| The example receives the entries of the journal | Receives none: no change is recorded after its request, which is the state it leaves. The reading of ReadJournal against the reference client is not yet shown with entries |
+
+Before the device naming of D-058, the example did not find our model: the device was `LD1`, and the rule names the device `TestIEDGenericIO`.
+
+The reference peer has no server example with logs in its image (`server_example_*`), so the peer side of the logs is not in the bench.
+
 ## Known gaps, with the task that closes each
 
 | Gap | Task |

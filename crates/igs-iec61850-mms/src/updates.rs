@@ -138,6 +138,16 @@ pub(crate) struct Notices {
 pub struct Updater {
     points: Arc<BTreeMap<String, Point>>,
     notices: Arc<Mutex<Notices>>,
+    /// The entries that the application appends to journals, applied at the next poll of the model (X2).
+    journal_appends: Arc<Mutex<Vec<JournalAppend>>>,
+}
+
+/// An entry that the application appends to a journal of the served model.
+#[derive(Debug, Clone)]
+pub(crate) struct JournalAppend {
+    pub(crate) device: String,
+    pub(crate) journal: String,
+    pub(crate) entry: igs_iso9506_mms_codec::generated::types::JournalEntry,
 }
 
 impl Updater {
@@ -145,6 +155,32 @@ impl Updater {
         Self {
             points: Arc::new(points),
             notices: Arc::new(Mutex::new(Notices::default())),
+            journal_appends: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Appends an entry to a journal of a logical device of the model (X2). The entry is applied at the next poll of the server, so
+    /// the call does not wait for the model. A journal that the model does not hold refuses the entry at that poll.
+    pub fn append_journal(
+        &self,
+        device: &str,
+        journal: &str,
+        entry: igs_iso9506_mms_codec::generated::types::JournalEntry,
+    ) {
+        if let Ok(mut appends) = self.journal_appends.lock() {
+            appends.push(JournalAppend {
+                device: device.to_string(),
+                journal: journal.to_string(),
+                entry,
+            });
+        }
+    }
+
+    /// Takes the journal entries that the application appended since the last call.
+    pub(crate) fn take_journal_appends(&self) -> Vec<JournalAppend> {
+        match self.journal_appends.lock() {
+            Ok(mut appends) => std::mem::take(&mut *appends),
+            Err(_) => Vec::new(),
         }
     }
 

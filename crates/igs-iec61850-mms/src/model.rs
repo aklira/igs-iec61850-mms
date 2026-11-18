@@ -365,6 +365,7 @@ impl ServedModel {
         let settings = crate::setting_groups::devices_of(configuration, &updater);
         crate::setting_groups::list(&mut vmd, &settings)?;
         let logs = crate::logs::Logs::build(configuration, &mut vmd, &updater)?;
+        logs.list(&mut vmd)?;
         Ok(Self {
             vmd,
             updater,
@@ -468,6 +469,17 @@ impl Model for ServedModel {
         let now = self.origin.elapsed();
         let (notices, dropped) = self.updater.take_notices();
         self.logs.poll(now, &notices, &mut self.vmd, &self.updater);
+        for append in self.updater.take_journal_appends() {
+            if let (Ok(domain), Ok(item)) = (
+                self.vmd.name(&append.device),
+                self.vmd.name(&append.journal),
+            ) {
+                // A journal that the model does not hold refuses the entry: the replay of the gateway reports it by its next read.
+                let _ = self
+                    .vmd
+                    .append_journal(&Target::in_domain(domain, item), append.entry);
+            }
+        }
         let changed: Vec<String> = notices
             .iter()
             .filter(|notice| notice.changed)
@@ -530,7 +542,8 @@ impl ServedModel {
                 matches!(&item.variable_specification,
                     VariableSpecification::Name(name)
                         if self.controls.item(name, true).is_some() || self.block_attribute(name).is_some()
-                            || self.settings_item(name).is_some_and(|(_, locus)| !matches!(locus, crate::setting_groups::Locus::SetEdit(_))))
+                            || self.settings_item(name).is_some_and(|(_, locus)| !matches!(locus, crate::setting_groups::Locus::SetEdit(_)))
+                            || self.log_item(name).is_some())
             }),
             VariableAccessSpecification::VariableListName(_) => false,
         }
@@ -552,6 +565,14 @@ impl ServedModel {
             })
     }
 
+    /// The log control block and the component that an item names, when it is one of the log control blocks of a device (X2).
+    fn log_item(&self, name: &ObjectName) -> Option<(usize, crate::logs::Locus)> {
+        let ObjectName::DomainSpecific(object) = name else {
+            return None;
+        };
+        self.logs.locate(&object.domain_id.0, &object.item_id.0)
+    }
+
     /// The block and the attribute that an item names, if it is an attribute of a report control block (`node$RP$name$attribute` or
     /// `node$BR$name$attribute`).
     fn block_attribute(&self, name: &ObjectName) -> Option<(BlockRef, String)> {
@@ -569,7 +590,7 @@ impl ServedModel {
                 matches!(&item.variable_specification,
                     VariableSpecification::Name(name)
                         if self.controls.item(name, false).is_some() || self.block_attribute(name).is_some()
-                            || self.settings_item(name).is_some())
+                            || self.settings_item(name).is_some() || self.log_item(name).is_some())
             }),
             VariableAccessSpecification::VariableListName(_) => false,
         }
@@ -607,6 +628,10 @@ impl ServedModel {
                 }
                 _ => None,
             };
+            let logged = match &item.variable_specification {
+                VariableSpecification::Name(name) => self.log_item(name),
+                _ => None,
+            };
             if let Some((object, _)) = control {
                 if let Some(slot) = answers.get_mut(index) {
                     *slot = Some(self.controls.select_read(now, peer.id, object));
@@ -624,6 +649,11 @@ impl ServedModel {
                     Some(device) => device.read(now, locus),
                     None => AccessResult::Failure(DataAccessError::OBJECT_NON_EXISTENT),
                 };
+                if let Some(slot) = answers.get_mut(index) {
+                    *slot = Some(result);
+                }
+            } else if let Some((block, locus)) = logged {
+                let result = self.logs.read(&self.vmd, block, locus);
                 if let Some(slot) = answers.get_mut(index) {
                     *slot = Some(result);
                 }
@@ -688,6 +718,10 @@ impl ServedModel {
                 VariableSpecification::Name(name) => self.settings_item(name),
                 _ => None,
             };
+            let logged = match &item.variable_specification {
+                VariableSpecification::Name(name) => self.log_item(name),
+                _ => None,
+            };
             if let Some((object, component)) = control {
                 let answer = self.controls.write(now, peer.id, object, component, data);
                 if let Some(slot) = answers.get_mut(index) {
@@ -711,6 +745,19 @@ impl ServedModel {
                         Err(error) => WriteResponseItemItem::Failure(error),
                     },
                     None => WriteResponseItemItem::Failure(DataAccessError::OBJECT_NON_EXISTENT),
+                };
+                if let Some(slot) = answers.get_mut(index) {
+                    *slot = Some(answer);
+                }
+            } else if let Some((block, locus)) = logged {
+                let answer = match locus {
+                    crate::logs::Locus::Component(component) => {
+                        self.logs
+                            .write(now, &mut self.vmd, &self.updater, block, component, data)
+                    }
+                    crate::logs::Locus::Structure => {
+                        WriteResponseItemItem::Failure(DataAccessError::OBJECT_ACCESS_DENIED)
+                    }
                 };
                 if let Some(slot) = answers.get_mut(index) {
                     *slot = Some(answer);

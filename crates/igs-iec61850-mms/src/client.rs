@@ -293,6 +293,39 @@ impl IecClient {
             .collect())
     }
 
+    /// The entries of a journal of a logical device, from the entry given (ReadJournal from an entry, that is QueryLogAfter), or all of
+    /// them when none is given (X2). A client that lost its association asks for the entries after the last one it had. The answer is
+    /// the one page that the server gives; a journal whose answer has more pages is read from its last entry by the caller.
+    pub async fn journal_entries(
+        &self,
+        device: &str,
+        journal: &str,
+        after: Option<&[u8]>,
+    ) -> Result<Vec<igs_iso9506_mms_codec::generated::types::JournalEntry>, ClientError> {
+        use igs_iso9506_mms_codec::generated::types::{
+            Identifier, ObjectName, ObjectNameDomainSpecific, ReadJournalRequest,
+            ReadJournalRequestRangeStartSpecification,
+        };
+        let request = ReadJournalRequest {
+            journal_name: ObjectName::DomainSpecific(ObjectNameDomainSpecific {
+                domain_id: Identifier(device.to_string()),
+                item_id: Identifier(journal.to_string()),
+            }),
+            range_start_specification: after.map(|identifier| {
+                ReadJournalRequestRangeStartSpecification::StartingEntry(identifier.to_vec())
+            }),
+            range_stop_specification: None,
+            list_of_variables: None,
+            entry_to_start_after: None,
+        };
+        let response = self
+            .client
+            .read_journal(request)
+            .await
+            .map_err(ClientError::Mms)?;
+        Ok(response.list_of_journal_entry)
+    }
+
     /// Writes the items, in one request. Each result is the success or the error of its item, in the order of the items.
     pub async fn write(
         &self,

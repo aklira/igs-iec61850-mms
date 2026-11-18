@@ -270,3 +270,32 @@ pub fn forward_outcomes(
         }
     })
 }
+
+/// Replays the entries of a downstream journal that the upstream journal does not hold yet (X2; 8-1 §17.3, and the gateway's recovery of
+/// the events that a lost association missed). `after` is the identifier of the last entry replayed, or none at the start: the entries
+/// after it are read from the downstream journal, appended to the upstream journal, and `after` moves to the last of them. The entries
+/// keep the identifiers of the downstream journal. Returns the number of entries appended.
+pub async fn replay_journal(
+    downstream: &IecClient,
+    updater: &Updater,
+    downstream_journal: (&str, &str),
+    upstream_journal: (&str, &str),
+    after: &mut Option<Vec<u8>>,
+) -> Result<usize, MirrorError> {
+    let (device, journal) = downstream_journal;
+    let entries = downstream
+        .journal_entries(device, journal, after.as_deref())
+        .await
+        .map_err(|error| MirrorError::Read(error.to_string()))?;
+    let mut appended = 0usize;
+    for entry in entries {
+        // ReadJournal starts at the entry it is given: that entry was replayed already.
+        if after.as_deref() == Some(entry.entry_identifier.as_slice()) {
+            continue;
+        }
+        *after = Some(entry.entry_identifier.clone());
+        updater.append_journal(upstream_journal.0, upstream_journal.1, entry);
+        appended = appended.saturating_add(1);
+    }
+    Ok(appended)
+}
