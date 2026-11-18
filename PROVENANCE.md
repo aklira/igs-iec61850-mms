@@ -1236,6 +1236,28 @@ silent, to be confirmed by an observation test against other implementations.
 - **Confidence**: high for the naming (the table and the peer agree, except `ResvTms`, which follows the table); high for the Owner reading of
   8-1, but its encoding and its source address are not decided.
 
+### D-054 — The file services of the server; the SCL file class dropped; SetFile refused (task X3)
+
+- **Sources**: IEC 61850-8-1 clause 23 (GetFile, SetFile, DeleteFile, GetFileAttributeValues) and the profile rules of the generated
+  IEC profile (`profile_81.rs`: `fileOpen`, `fileRead`, `fileClose` and `fileDirectory` for the server with the file feature; `obtainFile`
+  unmodelled on both sides; `fileDelete` unmodelled). The codec of `igs-iso9506-mms` has no ObtainFile request (tag 46 is a named bit only).
+- **Decision, by the maintainer**: the IEC file class of the SCL model (Q6) is dropped from X3: no source for it in the prepared texts of
+  61850-6 and 7-x. SetFile (ObtainFile) is refused, not served.
+- **What this change does**: the server serves a file store (`ServedModel::add_file`); `igs61850-server --files-dir DIR` loads the regular files
+  of a directory, each under its name (no subdirectories, no links, 16 MiB at most per file; the server does not start otherwise). The profile
+  declares the file feature for the server (`files: true`); the runtime check of the required services is not called anywhere, so the
+  declaration adds no requirement on a connecting client.
+- **SetFile**: a peer's ObtainFile is refused by the negotiation, since the IEC profile does not model it and the codec has no ObtainFile PDU.
+  The test `set_file_is_not_a_declared_service_of_the_server` checks the declaration, not the wire refusal (no raw-PDU helper in the test
+  harness).
+- **Tests**: `tests/files.rs` (five): the listing with the parts of the names, GetFile of a stored file, FILE-NON-EXISTENT for a missing file,
+  the deletion, and the declared services. Manual check: `igs61850-server --files-dir` with the MMS client of `igs-iso9506-mms` (`files`, `get`,
+  `delete`): the listing, the content and the deletion behave as the tests say.
+- **Not done**: the bench rows against the reference peer. The reference file example refuses every path tried (X3 log), and its directory
+  convention is not known; the rows wait for that. Sub-directories of the store, and the writing of files (SetFile), are not served.
+- **Confidence**: high for the reading and the refusal of SetFile in this repository; medium for the file store as an exposed directory, which
+  is a local choice of the demonstration binary.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |

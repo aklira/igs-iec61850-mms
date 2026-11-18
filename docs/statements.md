@@ -94,6 +94,12 @@ Each row names the tests that cover it; `cargo xtask statements --check` verifie
 | --- | --- | --- | --- |
 | SGCB-001 | The setting group control block: its structure and its six attributes are named in the domain (8-1 table 71, §16.1); its services are writes of its attributes | Implemented (D-050, D-053): the names and the structure are listed; the owner of the block (BRCB Owner) is open, see docs/capabilities.md | `the_sgcb_and_its_attributes_are_named_in_the_domain_with_their_structure` (crates/igs-iec61850-mms/tests/setting_groups.rs)<br>`the_editing_is_held_by_one_association_and_its_values_are_confirmed_into_the_group` (crates/igs-iec61850-mms/tests/setting_groups.rs) |
 
+## files
+
+| Requirement | Item | State | Tests |
+| --- | --- | --- | --- |
+| FILE-001 | File services of the server: the files of its store are listed (FileDirectory), read (GetFile) and deleted (FileDelete); SetFile (ObtainFile) is refused | Implemented (D-054): the store is loaded from a directory by igs61850-server --files-dir; the reference peer's file example is not in the bench yet | `a_stored_file_is_listed_by_file_directory_with_its_parts` (crates/igs-iec61850-mms/tests/files.rs)<br>`get_file_reads_the_content_of_a_stored_file` (crates/igs-iec61850-mms/tests/files.rs)<br>`a_deleted_file_is_no_longer_read` (crates/igs-iec61850-mms/tests/files.rs)<br>`set_file_is_not_a_declared_service_of_the_server` (crates/igs-iec61850-mms/tests/files.rs) |
+
 ## logs
 
 | Requirement | Item | State | Tests |

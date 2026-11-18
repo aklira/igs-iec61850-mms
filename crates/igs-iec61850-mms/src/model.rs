@@ -51,8 +51,9 @@ pub fn profile() -> Profile {
         arrays: false,
         // The log services are not declared: the served model holds no journal at run time (N7 of igs-iso9506-mms).
         logs: false,
-        // The file services are not declared: the served model holds no file store (N8 of igs-iso9506-mms).
-        files: false,
+        // The file services are declared (8-1 clause 23): the server serves its file store, which may be empty. SetFile
+        // (ObtainFile) is not declared, so the negotiation refuses it (X3, D-054).
+        files: true,
     })
 }
 
@@ -400,6 +401,12 @@ impl ServedModel {
         } else {
             false
         }
+    }
+
+    /// Adds a file to the store of the server, under its name (its parts, as a client gives them). The file services read and
+    /// delete the store (8-1 clause 23). A file of the same name is replaced.
+    pub fn add_file(&mut self, path: &[&str], content: Vec<u8>) {
+        self.vmd.add_file(path, content, None);
     }
 
     /// The VMD that answers the services.

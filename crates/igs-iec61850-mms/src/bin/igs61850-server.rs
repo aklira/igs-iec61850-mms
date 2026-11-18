@@ -41,6 +41,39 @@ struct Cli {
     /// Changes the status `GGIO1.Ind1.stVal` every this many milliseconds (zero: it does not change).
     #[arg(long, default_value_t = 0)]
     toggle_ms: u64,
+    /// A directory whose regular files the server serves through the file services, each under its own name (X3).
+    #[arg(long, value_name = "DIR")]
+    files_dir: Option<std::path::PathBuf>,
+}
+
+/// The largest file that the server loads from its directory: a file above it is refused, and the server does not start.
+const FILE_LIMIT: u64 = 16 * 1024 * 1024;
+
+/// Loads the regular files of a directory into the file store of the served model. Subdirectories and links are not followed.
+/// Returns how many files were loaded.
+fn load_files(
+    served: &mut ServedModel,
+    directory: &std::path::Path,
+) -> Result<usize, Box<dyn Error>> {
+    let mut loaded: usize = 0;
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        let metadata = std::fs::symlink_metadata(&path)?;
+        if !metadata.file_type().is_file() {
+            continue;
+        }
+        if metadata.len() > FILE_LIMIT {
+            return Err(format!("{}: larger than 16 MiB, not loaded", path.display()).into());
+        }
+        let name = entry.file_name();
+        let name = name
+            .to_str()
+            .ok_or_else(|| format!("{}: the name is not UTF-8", path.display()))?;
+        served.add_file(&[name], std::fs::read(&path)?);
+        loaded = loaded.saturating_add(1);
+    }
+    Ok(loaded)
 }
 
 #[tokio::main]
@@ -90,7 +123,14 @@ fn served(cli: &Cli) -> Result<(ServedModel, Option<String>), Box<dyn Error>> {
 }
 
 async fn run(cli: &Cli) -> Result<(), Box<dyn Error>> {
-    let (served, status) = served(cli)?;
+    let (mut served, status) = served(cli)?;
+    if let Some(directory) = &cli.files_dir {
+        let loaded = load_files(&mut served, directory)?;
+        println!(
+            "igs61850-server: {loaded} file(s) served from {}",
+            directory.display()
+        );
+    }
     let updater = served.updater();
     let server =
         Server::bind_model(&cli.listen, server_config(LinkConfig::default()), served).await?;
