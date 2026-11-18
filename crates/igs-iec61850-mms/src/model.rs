@@ -26,7 +26,7 @@ use crate::control::{AcceptAll, ControlHandle, ControlHandler, Controls};
 use crate::reports::{Block, BlockRef, Wire};
 use crate::reports::{ReportState, Reports};
 use crate::updates::{Point, Updater};
-use igs_iso9506_mms::client::{in_scope_capabilities, ClientConfig};
+use igs_iso9506_mms::client::{in_scope_capabilities_iec61850, ClientConfig};
 use igs_iso9506_mms::server::{Model, Outbound, Peer};
 use igs_iso9506_mms::vmd::{Error as VmdError, Identity, NameError, Target, Variable, Vmd};
 use igs_iso9506_mms::ServerConfig;
@@ -68,6 +68,7 @@ pub fn server_config(mut link: LinkConfig) -> ServerConfig {
         profile: profile(),
         ..ServerConfig::new(link)
     }
+    .with_iec61850_services()
     .with_alternate_access()
 }
 
@@ -76,7 +77,7 @@ pub fn client_config(mut link: LinkConfig) -> ClientConfig {
     link.nesting_level = LOGICAL_NODE_NESTING_LEVEL;
     ClientConfig {
         profile: profile(),
-        ..ClientConfig::new(link, in_scope_capabilities())
+        ..ClientConfig::new(link, in_scope_capabilities_iec61850())
     }
 }
 
