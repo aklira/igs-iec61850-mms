@@ -30,6 +30,10 @@ All notable changes to this project are recorded in this file. The format follow
 
 ### Added
 
+- Journals over MMS: each `Log` of an SCL file is a journal of its node, and each `LogControl` records the changes of its data set into it
+  (8-1 §17.3; D-056). ReadJournal reads them, and GetNameList lists the journal class of a domain.
+- The announced positive leap second (leap indicator 1) marks the midnight stamp as not known, as 7-2 Annex F.3 gives it (D-055).
+- Conformance drafts (ACSI, MICS, PIXIT) in `docs/conformance`; `cargo xtask statements --check` verifies their evidence.
 - Files: the server serves the files of its store (listing, GetFile and FileDelete); `igs61850-server --files-dir` loads a directory. SetFile
   is refused (D-054). The SCL file class is dropped from the plan.
 - The setting group control block is listed by GetNameList with its six attributes, and typed as a structure (8-1 table 71; D-053). The

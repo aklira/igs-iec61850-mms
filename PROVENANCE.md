@@ -1201,7 +1201,7 @@ silent, to be confirmed by an observation test against other implementations.
   when the clocks make it negative; it is not part of the accuracy, which the standard takes from the root values only.
 - **Client**: one request in flight, sent at most once per `POLL_INTERVAL` (64 s, a fixed poll). The RFC's mitigation algorithms are not
   run: §14 says an SNTP client does not need them. The durations are on the monotonic clock (RUN-003); the timestamps are the local UTC
-  time. A reply sets `leap_second_known`; a leap second that the server announces (indicator 1 or 2) is not carried into the stamp.
+  time. A reply sets `leap_second_known`; an announced insertion (indicator 1) marks the midnight stamp as not known, and a deletion is not signalled (D-055).
 - **What this change does**: `igs-iec61850-mms-core` (`sntp`, sans-I/O: the packet, its checks, the exchange, the accuracy, the client);
   `igs-iec61850-mms` (`sntp::SntpClock`, the UDP loop on port 123 and the `ClockSource` of TIME-001). The host clock of A5 is kept; the
   choice between the host synchronisation and the embedded client is declared in the PIXIT, not in the code.
@@ -1257,6 +1257,49 @@ silent, to be confirmed by an observation test against other implementations.
   convention is not known; the rows wait for that. Sub-directories of the store, and the writing of files (SetFile), are not served.
 - **Confidence**: high for the reading and the refusal of SetFile in this repository; medium for the file store as an exposed directory, which
   is a local choice of the demonstration binary.
+
+### D-055 — The leap second announced by the server: the midnight stamp is not known (task X6; TIME-002)
+
+- **Sources**: IEC 61850-7-2, TimeQuality `LeapSecondsKnown` (the prepared text of 7-2, §5 and Annex F.3): during the positive leap second
+  23:59:60, `LeapSecondsKnown` is FALSE, and its SecondSinceEpoch has the value of the midnight that follows (1 483 228 800 for the example of
+  the standard). The midnight itself is TRUE. RFC 5905 §7.3: the leap indicator 1 announces an insertion at the end of the UTC day, 2 a deletion.
+- **Decision**: while the last accepted reply announces an insertion (leap indicator 1), a stamp whose SecondSinceEpoch is a multiple of 86 400
+  is marked `LeapSecondsKnown` FALSE. That covers the positive leap second, which is indistinguishable by its value from the midnight: the
+  flag is set for both, which is conservative for the midnight. The flag returns to TRUE for the next second, and with the next reply that
+  does not announce an insertion. A deletion (indicator 2) has no value in 7-2, so it is not signalled; the stamps keep TRUE.
+- **Tests**: `igs-iec61850-mms-core/tests/sntp.rs`: the midnight under an announced insertion (FALSE), the second after it (TRUE), a midnight
+  without an announcement (TRUE), and a deletion (TRUE).
+- **Limit**: the reply gives the day of the leap second, not its instant, so the flag covers the midnight stamp while the announcement stands.
+  A client that needs the instant of the leap second must count the stamps itself. The standard's wording for the deletion is absent, and the
+  choice of TRUE is ours.
+- **Confidence**: high for the value and the flag of 7-2 (the example of the standard); medium for the scope of the announcement.
+
+### D-056 — The logs over MMS: each Log is a journal, the LogControl records into it (task X2; LOG-002)
+
+- **Sources**: IEC 61850-8-1 §17.3.3.2 (Table 75, the LCB), §17.3.3.3.2 (LogRef: the default journal is `<LD>/<LN>$GeneralLog`; the journal of a
+  declared `Log` is named `<LN>$<name>` here), §17.3.3.4 (Table 77: the entries; the EVENT-DATA transitions of LogEna; the DATA entries with the
+  journal variables of the reference and of the reason code, §17.3.3.4.4), §17.3.4 (the services). IEC 61850-6 (the `LogControl` and `Log`
+  elements: `logName`, `logEna`, `datSet`, `TrgOps`, `intgPd`; the schema of the frozen 2007B text).
+- **What this does**: the SCL build declares each `Log` as a journal of its node and each `LogControl` as a log control block with its
+  configuration (`Configuration.journals`, `Configuration.logs`). A block whose `logName` names no `Log` of its node is refused (SCL-003). The
+  served model defines the journals in the VMD (capacity 512), starts the blocks that `logEna` enables (the transition is the first entry),
+  and feeds them with the notices of the updates; a change of a member is an entry with the reference of the member, its value (read from the
+  model when the entry is written, as the core asks) and its reason code (`reason_bits`, the bits of table 38). Each entry has an identifier of
+  eight octets that increases from one; the time of the entry is the wall-clock time of the write, counted from 1 January 1984.
+- **Profile**: the server declares the log services (`logs: true`); the runtime check of the required services is not called, so the
+  declaration adds no requirement on a connecting client.
+- **GetNameList**: the journal class lists the journals of a domain (G14 of the plan). At the VMD scope it is refused: a journal is held in a
+  domain (8-1 §17.3.3.3.2 names journals within their logical device). The sibling implements it (`igs-iso9506-mms`, class `Journal`).
+- **Tests**: `igs-iec61850-mms/tests/logs.rs` (two, over MMS: the entries of the changes with their reference, value and reason, the identifiers;
+  the journal of the domain listed by GetNameList); `igs-iec61850-mms-core/tests/scl_build.rs` (the declaration of a block and its log, and the
+  refusal of a dangling `logName`); the sibling's `vmd` test `the_journals_are_listed_in_their_domain_only`.
+- **Not done**: the LCB over MMS (GetLCBValues reads of its structure of Table 75, SetLCBValues writes of LogEna, LogRef, DatSet, TrgOps and
+  IntgPd, and the service of LogEna while the block is enabled); the gateway replay of logs; the trigger qualities `qchg` and `dupd` are not
+  distinguished (a notice carries whether the value changed, and the data-update trigger is taken when it did not); the integrity period is
+  armed and fired, but its test is not in this change; the bench row of the journal against the reference peer (its example `iec61850_client_example_log`
+  reads a server that the peer image does not provide, so the reverse row needs our server).
+- **Decision and confidence**: high for the naming and the entry layout (the tables of 8-1); medium for the time of the entry (a wall-clock
+  choice, not fixed by the standard for the value of the time of day in the entry).
 
 ## Third-party code and sources
 
