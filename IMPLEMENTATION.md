@@ -710,15 +710,15 @@ The agent does not wait for these; it records the impact and continues with what
 | O5 Embedded SNTP client: requests, checks of the replies, accuracy from the root distance (TIME-002, TIME-003) | [x] (D-052, docs/ai-log/O5.md; PTP not implemented) |
 | R1 Legal review and release ⛔ | [ ] |
 | X1 Interop with deployed peers (E3, reverse buffered reports, resumption) | [ ] |
-| X2 Journal services over MMS (Q5 IEC side, G14) | [~] journals of the SCL logs over MMS: ReadJournal, GetNameList journal class (G14 closed in igs-iso9506-mms), the LogControl records into them (D-056, docs/ai-log/X2.md). Open: the LCB over MMS (GetLCBValues, SetLCBValues), the gateway replay, the bench rows |
+| X2 Journal services over MMS (Q5 IEC side, G14) | [~] journals of the SCL logs over MMS (ReadJournal, QueryLogByTime, QueryLogAfter), GetNameList journal class (G14), the LCB over MMS (GetLCBValues, SetLCBValues), the gateway replay (D-056, D-057); the reverse bench row of the log example passes its protocol and its LCB steps, and receives no entries yet (docs/interop.md, matrix X2) |
 | X3 File services in the model (Q6: file class in SCL, SetFile decision) | [~] server serves its file store (listing, GetFile, FileDelete; `igs61850-server --files-dir`, D-054), SetFile refused by decision, the SCL file class dropped by decision. Open: the bench rows against the reference peer (its file example refuses every path tried; docs/ai-log/X3.md); the client commands `files`, `get` and `delete` of igs-iso9506-mms are uncommitted |
 | X4 SGCB remainder: Owner, GetNameList (O3) | [~] names listed by GetNameList and checked against the peer (D-053, docs/ai-log/X4.md, bench row in docs/interop.md). Open: the Owner of the BRCB needs the address of the association, a decision on the `Peer` of igs-iso9506-mms |
 | X5 Security profile: G17 to G19 and the decision on 62351-4 and -6 (O4) | [ ] |
 | X6 Time in the PIXIT: source, PTP decision, leap seconds (O5) | [x] the PIXIT states the time source and the accuracy; the announced insertion is carried into the midnight stamp and tested (D-055, docs/ai-log/X6.md); PTP not implemented |
 | X7 PICS, MICS and PIXIT drafts written by the statements tool (V1) | [x] drafts in docs/conformance (ACSI, MICS, PIXIT): the content is authored, and `cargo xtask statements --check` verifies that every row names a test, a decision or a file (73 rows; docs/ai-log/X7.md) |
-| X8 Robustness on peer input, load measurement, soak test (V3) | [~] review of the panics, hostile-peer and soak tests, fuzz targets for SNTP and the file store, all seven targets run 60 s clean, report delivery measured with 1 to 16 clients (docs/robustness.md); open: the soak with reports enabled, longer campaigns |
+| X8 Robustness on peer input, load measurement, soak test (V3) | [x] review of the panics; hostile-peer, soak and soak with reports (the reservation after a loss, D-059); the seven fuzz targets 60 s clean; report delivery measured with 1 to 16 clients (docs/robustness.md) |
 | X9 API review and versioning, 1.0.0 change list | [ ] |
-| X10 Operations documentation (deployment guide, examples in CI) | [ ] |
+| X10 Operations documentation (deployment guide, examples in CI) | [~] docs/deployment.md written and checked against the code; the examples are built in CI; open: a reader who did not write the library checks the guide (maintainer) |
 | X11 Production release gate ⛔ | [ ] |
 
 Suggested order: P1, P3, P6, P5, F1, F2, F4, N1–N4 (M0), P2, P4, F3, A1–A7, S1–S3, D1 (M1), N5,

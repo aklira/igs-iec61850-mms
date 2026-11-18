@@ -8,6 +8,8 @@ All notable changes to this project are recorded in this file. The format follow
 
 ### Fixed
 
+- The logical devices of an SCL file are named as IEC 61850-6 §8.5 gives them: the `ldName` of the device, or the IED name followed by its
+  `inst` (`IED1LD1`, not `LD1`). Clients that named a domain by its instance must use the full name (D-058).
 - The published packages of `igs-iec61850-mms` and `igs-iec61850-mms-core` include `LICENSE` and `NOTICE`, with the copyright
   notice, the conditions and the disclaimer of the IEC Code Components licence that covers the generated files.
 - The double-point status `Dbpos` is served as a two-bit coded enumeration (7-2 Table 24). A logical node with a
@@ -30,6 +32,12 @@ All notable changes to this project are recorded in this file. The format follow
 
 ### Added
 
+- The log control block over MMS: its structure is read (GetLCBValues) and its components are written (SetLCBValues); a reference
+  cannot change while the block records; QueryLogByTime and QueryLogAfter are answered by ReadJournal (D-057).
+- The gateway replays the entries of a downstream journal that its upstream journal does not hold (`gateway::replay_journal`, called by
+  the application after a reconnection; D-057).
+- The reverse bench row of the log example of the reference peer against our server (`docs/interop.md`, matrix X2).
+- The deployment guide (`docs/deployment.md`): configuration, time, security, files, logs, gateway, behaviour after a loss, limits.
 - Journals over MMS: each `Log` of an SCL file is a journal of its node, and each `LogControl` records the changes of its data set into it
   (8-1 §17.3; D-056). ReadJournal reads them, and GetNameList lists the journal class of a domain.
 - The announced positive leap second (leap indicator 1) marks the midnight stamp as not known, as 7-2 Annex F.3 gives it (D-055).
@@ -75,13 +83,13 @@ All notable changes to this project are recorded in this file. The format follow
 
 ### Not implemented
 
-- Buffered reports: the general interrogation and the reservation of a buffered block; the reverse direction against the
-  reference client, and the resumption against the reference server (see `docs/interop.md`).
+- Buffered reports: the reverse direction against the reference client, and the resumption against the reference server
+  (see `docs/interop.md`).
 - Time-activated operate, and the security matrix (optional groups): refused or not provided.
 - PTP (IEC/IEEE 61850-9-3): not implemented. The time comes from the host clock with its declared quality, or from the embedded SNTP
   client.
 - Edition 1 interoperability is not tested against a peer yet.
-- Writing the PICS, MICS and PIXIT drafts of the capability statements.
+- The conformance statements are drafts (`docs/conformance`); the maintainer approves them (X11).
 
 ### Changed
 

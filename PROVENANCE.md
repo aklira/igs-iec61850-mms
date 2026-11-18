@@ -1301,6 +1301,54 @@ silent, to be confirmed by an observation test against other implementations.
 - **Decision and confidence**: high for the naming and the entry layout (the tables of 8-1); medium for the time of the entry (a wall-clock
   choice, not fixed by the standard for the value of the time of day in the entry).
 
+### D-057 — The log control block over MMS, and the replay of a downstream journal (task X2; LOG-003, LOG-004)
+
+- **Sources**: IEC 61850-8-1 §17.3.3.2 (Table 75: the components of the LCB), §17.3.3.3 (the mapping of each component: LogEna, LogRef,
+  DatSet, OldEntrTm, NewEntrTm, OldEntr (named OldEnt), NewEntr (named NewEnt), TrgOps, IntgPd; `bufTm` is not mapped), §17.3.4 (the
+  services); 7-2 §17.3 (the log model and its queries). Table 79 (QueryLogByTime) and 81 (QueryLogAfter) map to ReadJournal.
+- **Decision**: the structure `LN$LG$name` is read as a whole or by component (GetLCBValues), and its components are written (SetLCBValues):
+  LogEna starts or stops the recording (a transition is an entry); LogRef, DatSet, TrgOps and IntgPd are refused while LogEna is TRUE (the
+  core's refusal, `OBJECT-ACCESS-DENIED`); a LogRef that names no journal of the node is refused with `OBJECT-VALUE-INVALID` (8-1 §17.3.3.3.2).
+  The times and the entry identifiers of the block are the first and the last entries of its journal, and zero when the journal is empty
+  (the NULL values). The components are listed by GetNameList, as the setting groups are.
+- **Replay**: `gateway::replay_journal` reads the downstream journal after the last entry it replayed (ReadJournal from that entry), and appends
+  the entries that follow it to the upstream journal through the updater (`Updater::append_journal`, applied at the next poll). The replay
+  is called by the application after a reconnection; nothing is replayed by itself. The entries keep the identifiers of the downstream
+  journal, so the upstream journal must be fed by replay only (its own blocks must be disabled, or the identifiers collide).
+- **Tests**: `tests/log_control.rs` (four: the structure and its references, LogEna stopping the recording and the refused LogRef, the entries
+  after the last one a client had after a lost association, QueryLogByTime from and until a time); `tests/gateway_replay.rs` (the replay over two
+  servers: the entries missed during a lost association, and no repetition).
+- **Not done**: the bufTm (not mapped by 8-1); the entries of several pages (the answer of ReadJournal is taken as one page; a journal of more
+  pages is read from its last entry by the caller); the qchg and dupd triggers (D-045).
+- **Confidence**: high for the components and their names (Table 75); medium for the replay identifiers (a choice of this library, recorded here).
+
+### D-058 — The name of a logical device: its ldName, or the IED name and the instance (task X2, found by the reverse log row)
+
+- **Sources**: IEC 61850-6 §8.5 (the product-related naming, the mandatory option): the name of a logical device on the communication is the
+  `ldName` of the LDevice if it has one, else the IED name followed by the `inst` of the device (the prepared text of 61850-6, the attribute
+  `ldName`: "If missing, the default is the IED name concatenated with the inst value"); the references inside the SCL file use the instance
+  (`ldInst`), and the data sets of a file refer to the devices of the same IED.
+- **Finding**: the build named the devices by their instance alone (`LD1`), so an IED `IED1` with the instance `LD1` was served as domain
+  `LD1` instead of `IED1LD1`. The reference example of logs (`iec61850_client_example_log`) looks for the device `TestIEDGenericIO`, which the
+  rule gives for the IED `TestIED` with the instance `GenericIO`; the example did not find our model.
+- **Decision**: the build names each device by the rule above (`device_name`), keeps the instance for the references of the file (`device_names`
+  maps each `ldInst` to the name of its device), and uses the names everywhere a device is named in the configuration (data sets, reports,
+  logs, setting groups). The tests and the bench rows that named the domain `LD1` now name `IED1LD1`.
+- **Effect**: every server built from an SCL file serves its domains with the IED name in front. A client configured with the old names must
+  change them. The demonstration model already had the names of the rule (`IED1LD1`).
+- **Confidence**: high (the rule is written in 61850-6 §8.5; the reference example confirms it for the names it asks for).
+
+### D-059 — The reservation after the loss of an association is released when the server finds the loss (task X8; RUN-002)
+
+- **Finding**: the reservation of a block is released when the server finds that its association is lost. A dropped association (no word, the
+  TCP connection closed) is found when the server reads the end of the connection, which is asynchronous: a client that reconnects at once
+  finds the block still reserved, and its reservation is refused with `temporarily-unavailable` for a few milliseconds (in the soak with reports,
+  10 reservations of 2000 cycles met it). The orderly close does not show the race (600 cycles, with and without a change tried in the server,
+  which was not kept because the race did not occur).
+- **Decision**: no change of the server. A client that reconnects after a loss retries its reservation for a short time (the soak test retries
+  for one second, and counts the retries). The loss is a state of the transport: the library does not hold a reservation for a dropped client.
+- **Confidence**: high for the observation (the counts above); the latency is the local scheduling of the server, not a protocol value.
+
 ## Third-party code and sources
 
 | Component | Licence | Use | Notes |
