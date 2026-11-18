@@ -406,3 +406,91 @@ fn a_stamp_before_1970_is_at_the_epoch_and_not_synchronised() {
     assert_eq!(stamp.seconds, 0);
     assert!(stamp.quality.clock_not_synchronized);
 }
+
+/// A reply of a server whose leap indicator is `leap`, to a request sent at `origin`, and received at `local` with the server's
+/// clock equal to the local one.
+fn reply_with_leap(leap: u8, origin: NtpTime, local: NtpTime) -> [u8; PACKET_LEN] {
+    reply_bytes(
+        (leap << 6) | (4 << 3) | 4,
+        2,
+        0,
+        256,
+        0,
+        origin,
+        local,
+        local,
+    )
+}
+
+/// The UTC midnight of 2026-11-13 (a value of the SecondSinceEpoch that is a multiple of 86 400), in NTP time.
+const MIDNIGHT_NTP: u32 = UNIX_NOW + 2_208_988_800;
+
+#[test]
+fn a_midnight_stamp_under_an_announced_leap_second_is_marked_as_the_leap_second() {
+    // 7-2 Annex F.3: the positive leap second 23:59:60 has the value of the midnight that follows; its LeapSecondsKnown is FALSE.
+    let mut client = Client::new();
+    let local = at(MIDNIGHT_NTP);
+    client.poll(Duration::ZERO, local);
+    client
+        .receive(
+            Duration::from_secs(1),
+            local,
+            &reply_with_leap(1, local, local),
+        )
+        .expect("an announced insertion is accepted");
+    let stamp = client.stamp(Duration::from_secs(1), local);
+    assert_eq!(stamp.seconds, UNIX_NOW, "the value of the midnight");
+    assert!(
+        !stamp.quality.leap_second_known,
+        "the positive leap second is signalled"
+    );
+    assert!(!stamp.quality.clock_not_synchronized);
+
+    let after = at(MIDNIGHT_NTP + 1);
+    let stamp = client.stamp(Duration::from_secs(2), after);
+    assert!(
+        stamp.quality.leap_second_known,
+        "a second after the midnight the leap is known"
+    );
+}
+
+#[test]
+fn a_midnight_stamp_without_an_announced_leap_second_is_known() {
+    let mut client = Client::new();
+    let local = at(MIDNIGHT_NTP);
+    client.poll(Duration::ZERO, local);
+    client
+        .receive(
+            Duration::from_secs(1),
+            local,
+            &reply_with_leap(0, local, local),
+        )
+        .expect("the reply is accepted");
+    assert!(
+        client
+            .stamp(Duration::from_secs(1), local)
+            .quality
+            .leap_second_known
+    );
+}
+
+#[test]
+fn an_announced_deletion_is_not_signalled_as_an_insertion() {
+    // A deletion (leap indicator 2) removes a second; 7-2 has no value for it, so the stamp keeps LeapSecondsKnown TRUE.
+    let mut client = Client::new();
+    let local = at(MIDNIGHT_NTP);
+    client.poll(Duration::ZERO, local);
+    client
+        .receive(
+            Duration::from_secs(1),
+            local,
+            &reply_with_leap(2, local, local),
+        )
+        .expect("an announced deletion is accepted");
+    assert!(
+        client
+            .stamp(Duration::from_secs(1), local)
+            .quality
+            .leap_second_known
+    );
+}

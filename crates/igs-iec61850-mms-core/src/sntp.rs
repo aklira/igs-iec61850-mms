@@ -44,6 +44,12 @@ const VERSION_REQUEST: u8 = 4;
 /// The leap indicator of an unsynchronised server (RFC 5905 §7.3).
 const LEAP_UNSYNCHRONISED: u8 = 3;
 
+/// The leap indicator that announces a positive leap second: the last minute of the UTC day has 61 seconds (RFC 5905 §7.3).
+const LEAP_INSERTION: u8 = 1;
+
+/// The seconds of a UTC day, which the IEC 61850 timestamp counts from the epoch (7-2 Annex F.3).
+const SECONDS_PER_DAY: u32 = 86_400;
+
 /// The highest stratum of a synchronised server; stratum 0 is a kiss-o'-death and 16 is unsynchronised (RFC 5905 §7.3).
 const MAX_STRATUM: u8 = 15;
 
@@ -355,6 +361,8 @@ struct Estimate {
     distance: u64,
     /// The monotonic instant of the reply.
     taken_at: Duration,
+    /// Whether the reply announces a positive leap second (leap indicator 1): the last second of the UTC day is inserted.
+    insertion: bool,
 }
 
 /// The SNTP client: one request at a time to its server, and the estimate of the last accepted reply.
@@ -397,6 +405,7 @@ impl Client {
             offset: exchange.offset,
             distance: root_distance(&packet),
             taken_at: now,
+            insertion: packet.leap == LEAP_INSERTION,
         });
         Ok(())
     }
@@ -415,10 +424,20 @@ impl Client {
     pub fn stamp(&self, now: Duration, wall: NtpTime) -> UtcTimestamp {
         let local = i128::from(wall.units());
         let stamp = match self.estimate {
-            Some(estimate) if self.is_synchronised(now) => utc_at(
-                local.saturating_add(estimate.offset),
-                accuracy_of(estimate.distance),
-            ),
+            Some(estimate) if self.is_synchronised(now) => {
+                utc_at(
+                    local.saturating_add(estimate.offset),
+                    accuracy_of(estimate.distance),
+                )
+                .map(|mut stamp| {
+                    // The positive leap second has the value of the midnight that follows it, and 7-2 says that its
+                    // LeapSecondsKnown is FALSE: a midnight stamp under an announced insertion is marked so.
+                    if estimate.insertion && stamp.seconds % SECONDS_PER_DAY == 0 {
+                        stamp.quality.leap_second_known = false;
+                    }
+                    stamp
+                })
+            }
             _ => utc_at(local, NOT_SYNCHRONISED),
         };
         stamp.unwrap_or(UtcTimestamp {
