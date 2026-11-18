@@ -134,20 +134,100 @@ pub fn render(rows: &[Row]) -> String {
     out
 }
 
-/// `cargo xtask statements [--check]`: verifies the source, and writes the statements unless `check` is set.
+/// The drafts of the conformance statements, checked by `cargo xtask statements` (X7).
+const DRAFTS: [&str; 3] = [
+    "docs/conformance/ACSI.md",
+    "docs/conformance/MICS.md",
+    "docs/conformance/PIXIT.md",
+];
+
+/// Checks the evidence of the drafts: every row's last cell names its evidence, and each piece of it is a test that exists
+/// (`path::function`), a decision of `PROVENANCE.md` (`D-nnn`), or a file of the repository. Returns the number of rows checked.
+pub fn verify_drafts(root: &Path) -> Result<usize, String> {
+    let decisions = fs::read_to_string(root.join("PROVENANCE.md"))
+        .map_err(|error| format!("PROVENANCE.md: {error}"))?;
+    let mut checked = 0_usize;
+    let mut missing = Vec::new();
+    for draft in DRAFTS {
+        let text =
+            fs::read_to_string(root.join(draft)).map_err(|error| format!("{draft}: {error}"))?;
+        let lines: Vec<&str> = text.lines().collect();
+        for (index, line) in lines.iter().enumerate() {
+            // A row is a table line; the header is the line above the separator, and the separator is skipped.
+            if !line.starts_with('|') || line.starts_with("| ---") {
+                continue;
+            }
+            let is_header = lines
+                .get(index.saturating_add(1))
+                .is_some_and(|next| next.starts_with("| ---"));
+            if is_header {
+                continue;
+            }
+            let cells: Vec<&str> = line
+                .trim()
+                .trim_matches('|')
+                .split('|')
+                .map(str::trim)
+                .collect();
+            let Some(evidence) = cells.last() else {
+                continue;
+            };
+            checked = checked.saturating_add(1);
+            let number = index.saturating_add(1);
+            for token in evidence
+                .split(',')
+                .map(|t| t.trim().trim_matches('`'))
+                .filter(|t| !t.is_empty())
+            {
+                if let Some((file, function)) = token.split_once("::") {
+                    match fs::read_to_string(root.join(file)) {
+                        Ok(source) if source.contains(&format!("fn {function}(")) => {}
+                        Ok(_) => missing.push(format!(
+                            "{draft}:{number}: {file} does not define {function}"
+                        )),
+                        Err(_) => missing.push(format!(
+                            "{draft}:{number}: the file {file} is not in the repository"
+                        )),
+                    }
+                } else if token.starts_with("D-") {
+                    if !decisions.contains(&format!("### {token} ")) {
+                        missing.push(format!(
+                            "{draft}:{number}: the decision {token} is not in PROVENANCE.md"
+                        ));
+                    }
+                } else if !root.join(token).exists() {
+                    missing.push(format!(
+                        "{draft}:{number}: {token} is neither a test, a decision nor a file"
+                    ));
+                }
+            }
+        }
+    }
+    if missing.is_empty() {
+        Ok(checked)
+    } else {
+        Err(missing.join("\n"))
+    }
+}
+
+/// `cargo xtask statements [--check]`: verifies the source and the drafts, and writes the statements unless `check` is set.
 pub fn run(root: &Path, check: bool) -> Result<(), String> {
     let source = fs::read_to_string(root.join("docs/capabilities.tsv"))
         .map_err(|error| format!("docs/capabilities.tsv: {error}"))?;
     let rows = parse(&source)?;
     verify(root, &rows)?;
+    let drafts = verify_drafts(root)?;
     if check {
-        println!("statements: {} rows, every test exists", rows.len());
+        println!(
+            "statements: {} rows, every test exists; {drafts} draft rows of the conformance statements have their evidence",
+            rows.len()
+        );
         return Ok(());
     }
     fs::write(root.join("docs/statements.md"), render(&rows))
         .map_err(|error| format!("docs/statements.md: {error}"))?;
     println!(
-        "statements: {} rows written to docs/statements.md",
+        "statements: {} rows written to docs/statements.md; {drafts} draft rows checked",
         rows.len()
     );
     Ok(())
