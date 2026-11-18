@@ -73,7 +73,7 @@ async fn detect(text: &str) -> Option<Edition> {
             .expect("in time")
             .expect("accepted");
     let client = IecClient::new(client);
-    let edition = client.detect_edition("LD1").await.expect("read");
+    let edition = client.detect_edition("IED1LD1").await.expect("read");
     client.close().await.expect("closed");
     server.shutdown().await;
     edition

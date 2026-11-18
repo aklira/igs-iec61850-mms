@@ -130,21 +130,24 @@ async fn a_change_downstream_reaches_the_upstream_model_and_the_upstream_client_
     let task1 = tokio::spawn(run_mirror(
         client1,
         upstream_updater.clone(),
-        mirrors("LD1", "DOWN1"),
+        mirrors("IED1LD1", "DOWN1"),
         Duration::from_millis(50),
         stop_rx.clone(),
     ));
     let task2 = tokio::spawn(run_mirror(
         client2,
         upstream_updater.clone(),
-        mirrors("LD1", "DOWN2"),
+        mirrors("IED1LD1", "DOWN2"),
         Duration::from_millis(50),
         stop_rx.clone(),
     ));
 
     // The first downstream value changes; the second does not.
     updater1
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("the downstream value is updated");
 
     let upstream_client = connect(&up_address).await;
@@ -201,7 +204,7 @@ async fn a_lost_downstream_association_makes_the_mirrored_quality_invalid() {
 
     let client = connect(&address1).await;
     let mirror = Mirror {
-        downstream_device: "LD1".to_string(),
+        downstream_device: "IED1LD1".to_string(),
         downstream_variable: "GGIO1$ST$Ind1$stVal".to_string(),
         upstream_device: "DOWN1".to_string(),
         upstream_variable: "GGIO1$ST$Ind1$stVal".to_string(),
@@ -215,7 +218,10 @@ async fn a_lost_downstream_association_makes_the_mirrored_quality_invalid() {
         stop_rx,
     ));
     updater1
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("updated");
     let upstream_client = connect(&up_address).await;
     let quality_path = MmsName::new(

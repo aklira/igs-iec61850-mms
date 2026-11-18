@@ -43,7 +43,7 @@ fn configuration() -> Configuration {
 /// The journal C1 of LLN0 in the logical device LD1 (the journal of the `Log` of the file).
 fn journal() -> ObjectName {
     ObjectName::DomainSpecific(ObjectNameDomainSpecific {
-        domain_id: Identifier("LD1".to_string()),
+        domain_id: Identifier("IED1LD1".to_string()),
         item_id: Identifier("LLN0$C1".to_string()),
     })
 }
@@ -84,11 +84,17 @@ async fn the_changes_of_the_data_set_are_read_from_the_journal_with_their_reason
     .expect("the association is accepted");
 
     updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("the value is updated");
     tokio::time::sleep(Duration::from_millis(200)).await;
     updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(false))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(false),
+        )])
         .expect("the value is updated");
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -121,7 +127,7 @@ async fn the_changes_of_the_data_set_are_read_from_the_journal_with_their_reason
             "the value of the member and its reason code"
         );
         assert_eq!(
-            found[0].0, "LD1/GGIO1$ST$Ind1$stVal",
+            found[0].0, "IED1LD1/GGIO1$ST$Ind1$stVal",
             "the reference of the member"
         );
         assert_eq!(
@@ -170,7 +176,7 @@ async fn the_journals_of_a_domain_are_listed_by_get_name_list() {
         client.get_name_list(GetNameListRequest {
             object_class: ObjectClass::BasicObjectClass(ObjectClassBasicObjectClass::JOURNAL),
             object_scope: GetNameListRequestObjectScope::DomainSpecific(Identifier(
-                "LD1".to_string(),
+                "IED1LD1".to_string(),
             )),
             continue_after: None,
         }),

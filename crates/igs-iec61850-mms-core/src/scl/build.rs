@@ -252,6 +252,7 @@ pub fn build(
         setting_groups: Vec::new(),
         logs: Vec::new(),
         journals: Vec::new(),
+        device_names: HashMap::new(),
     };
     let Some(ied_element) = root
         .children
@@ -268,6 +269,7 @@ pub fn build(
     };
     let templates = Templates::build(root);
     let ied_path = segment("SCL", ied_element);
+    builder.device_names = device_names(ied_element, ied);
 
     let mut model = ServerModel::new();
     for access_point in ied_element
@@ -289,7 +291,7 @@ pub fn build(
                 .filter(|child| child.name == "LDevice")
             {
                 let device_path = segment(&server_path, device);
-                let inst = device.attribute("inst").unwrap_or_default();
+                let name = device_name(device, ied);
                 // A device with a SettingControl in its LN0 has setting groups (IEC 61850-6, 8.6); its setting data objects are SG and SE.
                 let groups = device.children.iter().any(|child| {
                     child.name == "LN0"
@@ -306,12 +308,12 @@ pub fn build(
                 {
                     let node_path = segment(&device_path, node);
                     if let Some(logical) =
-                        builder.logical_node(node, &node_path, inst, &templates, groups)
+                        builder.logical_node(node, &node_path, &name, &templates, groups)
                     {
                         nodes.push(logical);
                     }
                 }
-                match LogicalDevice::new(inst, nodes) {
+                match LogicalDevice::new(&name, nodes) {
                     Ok(logical_device) => {
                         if let Err(error) = model.add_device(logical_device) {
                             builder.report(
@@ -386,6 +388,8 @@ struct Builder<'a> {
     setting_groups: Vec<SettingGroups>,
     logs: Vec<LogDecl>,
     journals: Vec<JournalDecl>,
+    /// The name of each logical device of the IED, by its `inst` (the name of the device on the communication, 61850-6 §8.5).
+    device_names: HashMap<String, String>,
 }
 
 impl Builder<'_> {
@@ -820,7 +824,14 @@ impl Builder<'_> {
                 .iter()
                 .filter(|child| child.name == "FCDA")
                 .map(|fcda| Member {
-                    device: fcda.attribute("ldInst").unwrap_or(device_inst).to_string(),
+                    device: match fcda.attribute("ldInst") {
+                        Some(inst) => self
+                            .device_names
+                            .get(inst)
+                            .cloned()
+                            .unwrap_or_else(|| inst.to_string()),
+                        None => device_inst.to_string(),
+                    },
                     node: format!(
                         "{}{}{}",
                         fcda.attribute("prefix").unwrap_or_default(),
@@ -996,6 +1007,43 @@ fn report_config(node: &Element, block: &Element, node_name: &str) -> Config {
             .and_then(|value| value.parse().ok())
             .unwrap_or(0),
     }
+}
+
+/// The name of a logical device on the communication: its `ldName` when the file gives one, else the name of the IED followed by the
+/// `inst` of the device (IEC 61850-6 §8.5, the product-related naming, which is the default).
+fn device_name(device: &Element, ied: &str) -> String {
+    match device.attribute("ldName") {
+        Some(name) if !name.is_empty() => name.to_string(),
+        _ => format!("{ied}{}", device.attribute("inst").unwrap_or_default()),
+    }
+}
+
+/// The names of the logical devices of an IED, by their `inst` (the references of the SCL file use the instance).
+fn device_names(ied_element: &Element, ied: &str) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    for access_point in ied_element
+        .children
+        .iter()
+        .filter(|child| child.name == "AccessPoint")
+    {
+        for server in access_point
+            .children
+            .iter()
+            .filter(|child| child.name == "Server")
+        {
+            for device in server
+                .children
+                .iter()
+                .filter(|child| child.name == "LDevice")
+            {
+                let inst = device.attribute("inst").unwrap_or_default().to_string();
+                names
+                    .entry(inst)
+                    .or_insert_with(|| device_name(device, ied));
+            }
+        }
+    }
+    names
 }
 
 /// The configuration of a log control block, from its element and the data sets of its node (IEC 61850-8-1 §17.3.3.2, Table 75).

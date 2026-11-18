@@ -66,7 +66,7 @@ async fn start() -> (Server, Client, Updater) {
 /// The MMS name of the data set DS1 of the device LD1.
 fn ds1() -> ObjectName {
     ObjectName::DomainSpecific(ObjectNameDomainSpecific {
-        domain_id: Identifier("LD1".to_string()),
+        domain_id: Identifier("IED1LD1".to_string()),
         item_id: Identifier("LLN0$DS1".to_string()),
     })
 }
@@ -76,7 +76,7 @@ async fn the_data_sets_of_the_device_are_listed() {
     let (server, client, _updater) = start().await;
     let client = IecClient::new(client);
     assert_eq!(
-        client.data_sets("LD1").await.unwrap(),
+        client.data_sets("IED1LD1").await.unwrap(),
         ["LLN0$DS1".to_string()]
     );
     client.close().await.unwrap();
@@ -87,12 +87,15 @@ async fn the_data_sets_of_the_device_are_listed() {
 async fn the_members_keep_their_document_order() {
     let (server, client, _updater) = start().await;
     let client = IecClient::new(client);
-    let members = client.data_set_members("LD1", "LLN0$DS1").await.unwrap();
+    let members = client
+        .data_set_members("IED1LD1", "LLN0$DS1")
+        .await
+        .unwrap();
     assert_eq!(
         members,
         [
-            ("LD1".to_string(), "LLN0$ST$Mod$stVal".to_string()),
-            ("LD1".to_string(), "GGIO1$ST$Ind1$stVal".to_string()),
+            ("IED1LD1".to_string(), "LLN0$ST$Mod$stVal".to_string()),
+            ("IED1LD1".to_string(), "GGIO1$ST$Ind1$stVal".to_string()),
         ]
     );
     client.close().await.unwrap();
@@ -103,10 +106,13 @@ async fn the_members_keep_their_document_order() {
 async fn the_data_set_reads_its_values_in_the_order_of_its_members() {
     let (server, client, updater) = start().await;
     updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("the value is updated");
     let client = IecClient::new(client);
-    let values = client.read_data_set("LD1", "LLN0$DS1").await.unwrap();
+    let values = client.read_data_set("IED1LD1", "LLN0$DS1").await.unwrap();
     assert_eq!(values.len(), 2);
     assert!(matches!(values[1], Ok(Data::Boolean(true))), "{values:?}");
     client.close().await.unwrap();
@@ -125,12 +131,12 @@ async fn a_static_data_set_is_not_deleted_by_a_client() {
     let domain = DeleteNamedVariableListRequest {
         scope_of_delete: Some(DeleteNamedVariableListRequestScopeOfDelete::DOMAIN),
         list_of_variable_list_name: None,
-        domain_name: Some(Identifier("LD1".to_string())),
+        domain_name: Some(Identifier("IED1LD1".to_string())),
     };
     assert!(client.delete_named_variable_list(domain).await.is_err());
     let client = IecClient::new(client);
     assert_eq!(
-        client.data_sets("LD1").await.unwrap(),
+        client.data_sets("IED1LD1").await.unwrap(),
         ["LLN0$DS1".to_string()]
     );
     client.close().await.unwrap();

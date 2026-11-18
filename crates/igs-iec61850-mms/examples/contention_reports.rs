@@ -34,7 +34,7 @@ use igs_iso9506_mms_codec::generated::types::Data;
 use igs_iso9506_mms_link::config::LinkConfig;
 
 const SAMPLE: &str = include_str!("../../igs-iec61850-mms-core/tests/data/sample.cid");
-const STATUS: &str = "LD1/GGIO1$ST$Ind1$stVal";
+const STATUS: &str = "IED1LD1/GGIO1$ST$Ind1$stVal";
 
 /// The sample with `blocks` unbuffered blocks in LLN0, RPT1 to RPTn, each on the data set DS1 (the status of Ind1 and the mode).
 fn fixture(blocks: usize) -> String {
@@ -97,7 +97,7 @@ async fn enable(client: &IecClient, block: &str) -> Result<(), String> {
     ];
     for step in steps {
         client
-            .urcb_write("LD1", "LLN0", block, step)
+            .urcb_write("IED1LD1", "LLN0", block, step)
             .await
             .map_err(|error| error.to_string())?
             .map_err(|error| format!("{error:?}"))?;
@@ -123,7 +123,9 @@ async fn subscriber(
     let client = IecClient::new(client);
     enable(&client, &block).await?;
     let mut arrivals = Vec::with_capacity(count);
-    let deadline = tokio::time::Instant::now().checked_add(time).unwrap_or_else(tokio::time::Instant::now);
+    let deadline = tokio::time::Instant::now()
+        .checked_add(time)
+        .unwrap_or_else(tokio::time::Instant::now);
     while arrivals.len() < count {
         match tokio::time::timeout_at(deadline, events.next()).await {
             Ok(Some(Event::Report(service))) => {

@@ -104,7 +104,7 @@ fn sgcb_item() -> VariableAccessSpecification {
         VariableAccessSpecificationListOfVariableItem {
             variable_specification: VariableSpecification::Name(ObjectName::DomainSpecific(
                 ObjectNameDomainSpecific {
-                    domain_id: Identifier("LD1".to_string()),
+                    domain_id: Identifier("IED1LD1".to_string()),
                     item_id: Identifier(SGCB.to_string()),
                 },
             )),

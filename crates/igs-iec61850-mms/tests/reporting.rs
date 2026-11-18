@@ -137,7 +137,7 @@ async fn configure(
     ];
     for step in steps {
         client
-            .urcb_write("LD1", "LLN0", block, step)
+            .urcb_write("IED1LD1", "LLN0", block, step)
             .await
             .expect("the write is answered")
             .expect("the write is accepted");
@@ -188,7 +188,10 @@ async fn a_configured_block_reports_the_change_to_its_owner_in_the_layout_of_the
     .await;
     setup
         .updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("the value is updated");
     let mut events = events;
     let report = report_within(&mut events, Duration::from_secs(10))
@@ -219,7 +222,10 @@ async fn two_clients_with_distinct_subscriptions_receive_only_their_own_reports(
     configure(&second, "RPT2", "LLN0$DS1", data_change(), 0).await;
     setup
         .updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("updated");
     let for_first = report_within(&mut first_events, Duration::from_secs(10))
         .await
@@ -244,19 +250,22 @@ async fn a_disabled_block_reports_nothing_and_its_values_are_read() {
     let (client, mut events) = setup.clients.remove(0);
     configure(&client, "RPT1", "LLN0$DS1", data_change(), 0).await;
     client
-        .urcb_write("LD1", "LLN0", "RPT1", UrcbWrite::Enable(false))
+        .urcb_write("IED1LD1", "LLN0", "RPT1", UrcbWrite::Enable(false))
         .await
         .expect("answered")
         .expect("disabled");
     setup
         .updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("updated");
     assert!(report_within(&mut events, Duration::from_millis(400))
         .await
         .is_none());
     let values = client
-        .urcb_values("LD1", "LLN0", "RPT1")
+        .urcb_values("IED1LD1", "LLN0", "RPT1")
         .await
         .expect("the values are read");
     assert_eq!(values.rpt_id, "RPT1");
@@ -287,7 +296,7 @@ async fn a_general_interrogation_reports_every_member_with_its_reason() {
     )
     .await;
     client
-        .urcb_write("LD1", "LLN0", "RPT1", UrcbWrite::GeneralInterrogation)
+        .urcb_write("IED1LD1", "LLN0", "RPT1", UrcbWrite::GeneralInterrogation)
         .await
         .expect("answered")
         .expect("accepted");
@@ -355,7 +364,10 @@ async fn a_quality_trigger_alone_does_not_report_a_data_change() {
     .await;
     setup
         .updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("updated");
     assert!(
         report_within(&mut events, Duration::from_millis(400))
@@ -366,7 +378,7 @@ async fn a_quality_trigger_alone_does_not_report_a_data_change() {
     setup
         .updater
         .update(&[Change::new(
-            "LD1/GGIO1$ST$Ind1$q",
+            "IED1LD1/GGIO1$ST$Ind1$q",
             Data::BitString(BitString {
                 unused: 3,
                 bytes: vec![0x80, 0],
@@ -387,13 +399,13 @@ async fn a_write_by_a_client_that_does_not_hold_the_block_is_refused() {
     let (holder, _) = setup.clients.remove(0);
     let (other, _) = setup.clients.remove(0);
     holder
-        .urcb_write("LD1", "LLN0", "RPT1", UrcbWrite::Reserve(true))
+        .urcb_write("IED1LD1", "LLN0", "RPT1", UrcbWrite::Reserve(true))
         .await
         .expect("answered")
         .expect("reserved");
     assert!(other
         .urcb_write(
-            "LD1",
+            "IED1LD1",
             "LLN0",
             "RPT1",
             UrcbWrite::DataSet(Some("LLN0$DS1".to_string()))
@@ -402,7 +414,7 @@ async fn a_write_by_a_client_that_does_not_hold_the_block_is_refused() {
         .expect("answered")
         .is_err());
     assert!(other
-        .urcb_write("LD1", "LLN0", "RPT1", UrcbWrite::Enable(true))
+        .urcb_write("IED1LD1", "LLN0", "RPT1", UrcbWrite::Enable(true))
         .await
         .expect("answered")
         .is_err());

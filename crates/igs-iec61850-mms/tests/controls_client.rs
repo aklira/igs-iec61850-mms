@@ -60,7 +60,7 @@ fn configuration(text: &str) -> Configuration {
 
 /// The reference of the controlled object of the sample.
 const OBJECT: &str = "LLN0$CO$Mod";
-const REFERENCE: &str = "LD1/LLN0$CO$Mod";
+const REFERENCE: &str = "IED1LD1/LLN0$CO$Mod";
 
 /// Starts the served sample, and connects the clients (in order), each with its events.
 async fn start(
@@ -141,12 +141,12 @@ async fn a_select_before_operate_object_is_selected_and_operated_by_the_typed_ap
     let (server, mut clients, _handle) = start(&controlled_sample(2, 500), 1).await;
     let (client, _events) = clients.remove(0);
     let reference = client
-        .select("LD1", OBJECT)
+        .select("IED1LD1", OBJECT)
         .await
         .expect("the select is answered");
     assert_eq!(reference.as_deref(), Some(REFERENCE));
     assert!(client
-        .operate("LD1", OBJECT, &command(1, 1, true))
+        .operate("IED1LD1", OBJECT, &command(1, 1, true))
         .await
         .expect("answered")
         .is_ok());
@@ -161,24 +161,24 @@ async fn competing_clients_are_refused_by_the_typed_api() {
     let (second, _) = clients.remove(0);
     assert_eq!(
         first
-            .select("LD1", OBJECT)
+            .select("IED1LD1", OBJECT)
             .await
             .expect("answered")
             .as_deref(),
         Some(REFERENCE)
     );
     assert_eq!(
-        second.select("LD1", OBJECT).await.expect("answered"),
+        second.select("IED1LD1", OBJECT).await.expect("answered"),
         None,
         "the selection is held by the first client"
     );
     assert!(second
-        .operate("LD1", OBJECT, &command(2, 1, true))
+        .operate("IED1LD1", OBJECT, &command(2, 1, true))
         .await
         .expect("answered")
         .is_err());
     assert!(first
-        .operate("LD1", OBJECT, &command(1, 2, true))
+        .operate("IED1LD1", OBJECT, &command(1, 2, true))
         .await
         .expect("answered")
         .is_ok());
@@ -190,15 +190,15 @@ async fn a_cancel_frees_the_selection_for_another_client() {
     let (server, mut clients, _handle) = start(&controlled_sample(2, 500), 2).await;
     let (first, _) = clients.remove(0);
     let (second, _) = clients.remove(0);
-    first.select("LD1", OBJECT).await.expect("answered");
+    first.select("IED1LD1", OBJECT).await.expect("answered");
     assert!(first
-        .cancel("LD1", OBJECT, &command(1, 3, false))
+        .cancel("IED1LD1", OBJECT, &command(1, 3, false))
         .await
         .expect("answered")
         .is_ok());
     assert_eq!(
         second
-            .select("LD1", OBJECT)
+            .select("IED1LD1", OBJECT)
             .await
             .expect("answered")
             .as_deref(),
@@ -212,12 +212,12 @@ async fn a_deferred_positive_outcome_is_decoded_as_a_positive_termination() {
     let (server, mut clients, handle) = start(&controlled_sample(4, 5_000), 1).await;
     let (client, mut events) = clients.remove(0);
     assert!(client
-        .select_with_value("LD1", OBJECT, &command(1, 7, true))
+        .select_with_value("IED1LD1", OBJECT, &command(1, 7, true))
         .await
         .expect("answered")
         .is_ok());
     assert!(client
-        .operate("LD1", OBJECT, &command(1, 7, true))
+        .operate("IED1LD1", OBJECT, &command(1, 7, true))
         .await
         .expect("answered")
         .is_ok());
@@ -242,12 +242,12 @@ async fn a_deferred_negative_outcome_is_decoded_with_its_cause() {
     let (server, mut clients, handle) = start(&controlled_sample(4, 5_000), 1).await;
     let (client, mut events) = clients.remove(0);
     client
-        .select_with_value("LD1", OBJECT, &command(1, 8, true))
+        .select_with_value("IED1LD1", OBJECT, &command(1, 8, true))
         .await
         .expect("answered")
         .expect("selected");
     client
-        .operate("LD1", OBJECT, &command(1, 8, true))
+        .operate("IED1LD1", OBJECT, &command(1, 8, true))
         .await
         .expect("answered")
         .expect("operated");
@@ -280,7 +280,7 @@ async fn an_enhanced_operate_without_an_outcome_times_out_negatively() {
     let (server, mut clients, _handle) = start(&controlled_sample(3, 300), 1).await;
     let (client, mut events) = clients.remove(0);
     client
-        .operate("LD1", OBJECT, &command(1, 9, true))
+        .operate("IED1LD1", OBJECT, &command(1, 9, true))
         .await
         .expect("answered")
         .expect("operated");
@@ -300,8 +300,10 @@ async fn an_enhanced_operate_without_an_outcome_times_out_negatively() {
 async fn an_outcome_for_an_unknown_object_is_refused_by_the_handle() {
     let (server, _clients, handle) = start(&controlled_sample(4, 5_000), 0).await;
     assert_eq!(
-        handle.complete("LD1/GGIO1$CO$Ind1", Ok(())),
-        Err(ControlError::UnknownObject("LD1/GGIO1$CO$Ind1".to_string()))
+        handle.complete("IED1LD1/GGIO1$CO$Ind1", Ok(())),
+        Err(ControlError::UnknownObject(
+            "IED1LD1/GGIO1$CO$Ind1".to_string()
+        ))
     );
     server.shutdown().await;
 }

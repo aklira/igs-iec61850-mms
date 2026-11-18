@@ -133,10 +133,10 @@ async fn an_upstream_operate_is_forwarded_and_its_termination_is_the_downstream_
     let handle = served.control_handle();
     let served = served.with_control_handler(ForwardHandler {
         downstream: Arc::clone(&downstream_client),
-        device: "LD1".to_string(),
+        device: "IED1LD1".to_string(),
         component: "LLN0$CO$Mod".to_string(),
         upstream: handle.clone(),
-        reference: "LD1/LLN0$CO$Mod".to_string(),
+        reference: "IED1LD1/LLN0$CO$Mod".to_string(),
         origin: Originator {
             category: 3,
             identity: b"gateway".to_vec(),
@@ -151,13 +151,13 @@ async fn an_upstream_operate_is_forwarded_and_its_termination_is_the_downstream_
     let pump = forward_outcomes(
         downstream_events,
         handle.clone(),
-        "LD1/LLN0$CO$Mod".to_string(),
+        "IED1LD1/LLN0$CO$Mod".to_string(),
     );
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // A command that the downstream does not complete: the upstream termination is the downstream timeout.
     assert!(upstream_client
-        .operate("LD1", "LLN0$CO$Mod", &command(1))
+        .operate("IED1LD1", "LLN0$CO$Mod", &command(1))
         .await
         .expect("answered")
         .is_ok());
@@ -182,20 +182,20 @@ async fn an_upstream_operate_is_forwarded_and_its_termination_is_the_downstream_
 
     // A command that the downstream completes: its status changes, and the upstream termination is positive.
     assert!(upstream_client
-        .operate("LD1", "LLN0$CO$Mod", &command(2))
+        .operate("IED1LD1", "LLN0$CO$Mod", &command(2))
         .await
         .expect("answered")
         .is_ok());
     tokio::time::sleep(Duration::from_millis(100)).await;
     down_updater
-        .update(&[Change::new("LD1/LLN0$ST$Mod$stVal", Data::Integer(1))])
+        .update(&[Change::new("IED1LD1/LLN0$ST$Mod$stVal", Data::Integer(1))])
         .expect("the downstream status changes");
     match next_termination(&mut upstream_events, Duration::from_secs(10))
         .await
         .expect("the upstream termination")
     {
         Termination::Positive { object, ctl_num } => {
-            assert_eq!(object, "LD1/LLN0$CO$Mod");
+            assert_eq!(object, "IED1LD1/LLN0$CO$Mod");
             assert_eq!(ctl_num, 2);
         }
         other => panic!("a positive termination is expected: {other:?}"),

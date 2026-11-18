@@ -140,7 +140,10 @@ async fn the_owner_receives_the_report_of_a_change_and_no_other_association() {
 
     setup
         .updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("the value is updated");
 
     let (_, owner_events) = &mut setup.clients[0];
@@ -189,7 +192,10 @@ async fn an_update_that_changes_nothing_reports_nothing() {
         .expect("enabled");
     setup
         .updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("updated");
     let (_, events) = &mut setup.clients[0];
     assert!(
@@ -200,7 +206,10 @@ async fn an_update_that_changes_nothing_reports_nothing() {
     );
     setup
         .updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("updated");
     assert!(
         report_within(events, Duration::from_millis(400))
@@ -227,7 +236,7 @@ async fn a_change_outside_the_data_set_reports_nothing() {
     setup
         .updater
         .update(&[Change::new(
-            "LD1/GGIO1$ST$Ind1$q",
+            "IED1LD1/GGIO1$ST$Ind1$q",
             Data::BitString(quality_bits()),
         )])
         .expect("updated");
@@ -245,7 +254,10 @@ async fn a_disabled_block_reports_nothing_and_its_refusals_are_explicit() {
     let (owner, other) = (peers[0], peers[1]);
     setup
         .updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("updated");
     let (_, owner_events) = &mut setup.clients[0];
     assert!(

@@ -24,7 +24,7 @@ fn last_error(cause: i128) -> UnconfirmedService {
             ObjectName::VmdSpecific(Identifier("LastApplError".to_string())),
         ),
         list_of_access_result: vec![AccessResult::Success(Data::Structure(vec![
-            Data::VisibleString("LD1/LLN0$CO$Mod".to_string()),
+            Data::VisibleString("IED1LD1/LLN0$CO$Mod".to_string()),
             Data::Integer(0),
             Data::Structure(vec![Data::Integer(1), Data::OctetString(vec![1])]),
             Data::Unsigned(4),

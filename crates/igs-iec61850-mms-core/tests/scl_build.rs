@@ -54,7 +54,7 @@ fn the_sample_builds_its_model_data_sets_and_addresses() {
 
     let devices = configuration.model.devices();
     assert_eq!(devices.len(), 1);
-    assert_eq!(devices[0].name().to_string(), "LD1");
+    assert_eq!(devices[0].name().to_string(), "IED1LD1");
     let nodes: Vec<String> = devices[0]
         .nodes()
         .iter()
@@ -66,7 +66,7 @@ fn the_sample_builds_its_model_data_sets_and_addresses() {
     let set = &configuration.data_sets[0];
     assert_eq!(
         (set.device.as_str(), set.node.as_str(), set.name.as_str()),
-        ("LD1", "LLN0", "LLN0$DS1")
+        ("IED1LD1", "LLN0", "LLN0$DS1")
     );
     assert_eq!(set.members.len(), 2);
     assert_eq!(set.members[1].node, "GGIO1");
@@ -116,7 +116,7 @@ fn a_declared_buffered_report_control_is_built_with_its_buffered_options() {
             block.node.as_str(),
             block.name.as_str()
         ),
-        ("LD1", "LLN0", "RC1")
+        ("IED1LD1", "LLN0", "RC1")
     );
     assert!(block.config.opt_flds.buf_ovfl && block.config.opt_flds.entry_id);
     assert!(
@@ -143,7 +143,7 @@ fn an_unbuffered_report_control_is_declared_with_its_options_triggers_and_data_s
             report.node.as_str(),
             report.name.as_str()
         ),
-        ("LD1", "LLN0", "RPT1")
+        ("IED1LD1", "LLN0", "RPT1")
     );
     let config = &report.config;
     assert_eq!(config.rpt_id, "RPT1");
@@ -198,7 +198,7 @@ fn an_instance_value_of_a_basic_attribute_is_kept_as_an_initial_value() {
             value.variable.as_str(),
             value.text.as_str()
         ),
-        ("LD1", "GGIO1", "GGIO1$ST$Ind1$stVal", "true")
+        ("IED1LD1", "GGIO1", "GGIO1$ST$Ind1$stVal", "true")
     );
 }
 
@@ -285,7 +285,10 @@ fn a_data_set_selects_the_variables_of_its_members_in_order() {
         .collect();
     assert_eq!(
         variables,
-        [("LD1", "LLN0$ST$Mod$stVal"), ("LD1", "GGIO1$ST$Ind1$stVal")]
+        [
+            ("IED1LD1", "LLN0$ST$Mod$stVal"),
+            ("IED1LD1", "GGIO1$ST$Ind1$stVal")
+        ]
     );
 }
 
@@ -394,7 +397,7 @@ fn a_device_with_setting_groups_serves_the_setting_values_as_sg_and_se() {
     assert_eq!(
         configuration.setting_groups,
         [igs_iec61850_mms_core::scl::build::SettingGroups {
-            device: "LD1".to_string(),
+            device: "IED1LD1".to_string(),
             num_of_sgs: 2,
             active: 1,
         }]

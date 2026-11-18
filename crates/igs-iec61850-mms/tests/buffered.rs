@@ -121,7 +121,7 @@ async fn configure(client: &IecClient) {
     ];
     for step in steps {
         client
-            .buffered_write("LD1", "LLN0", BLOCK, step)
+            .buffered_write("IED1LD1", "LLN0", BLOCK, step)
             .await
             .expect("the write is answered")
             .expect("the write is accepted");
@@ -149,7 +149,7 @@ async fn report_within(events: &mut Events, time: Duration) -> Option<DecodedBuf
 
 fn set_status(updater: &Updater, on: bool) {
     updater
-        .update(&[Change::new(format!("LD1/{STATUS}"), Data::Boolean(on))])
+        .update(&[Change::new(format!("IED1LD1/{STATUS}"), Data::Boolean(on))])
         .expect("the change is applied");
 }
 
@@ -191,7 +191,7 @@ async fn a_buffered_block_reports_its_changes_to_the_association_that_enabled_it
     assert!(second.entries[0].value == Data::Boolean(false));
 
     let values = owner
-        .buffered_values("LD1", "LLN0", BLOCK)
+        .buffered_values("IED1LD1", "LLN0", BLOCK)
         .await
         .expect("the block is read");
     assert!(values.enabled);
@@ -240,7 +240,7 @@ async fn the_entries_made_while_the_association_is_lost_are_sent_after_the_clien
     // The reconnected client asks the block where it is: the newest entry made.
     let (client, mut events) = connect(&setup.address).await;
     let values = client
-        .buffered_values("LD1", "LLN0", BLOCK)
+        .buffered_values("IED1LD1", "LLN0", BLOCK)
         .await
         .expect("the block is read");
     assert!(
@@ -255,12 +255,17 @@ async fn the_entries_made_while_the_association_is_lost_are_sent_after_the_clien
 
     // It resumes after the entry it received, and the reports start with the next one.
     client
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::EntryId(last_received))
+        .buffered_write(
+            "IED1LD1",
+            "LLN0",
+            BLOCK,
+            BufferedWrite::EntryId(last_received),
+        )
         .await
         .expect("the write is answered")
         .expect("the resynchronisation is accepted");
     client
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::Enable(true))
+        .buffered_write("IED1LD1", "LLN0", BLOCK, BufferedWrite::Enable(true))
         .await
         .expect("the write is answered")
         .expect("the enabling is accepted");
@@ -289,7 +294,12 @@ async fn an_entry_that_the_history_does_not_hold_is_refused_for_resynchronisatio
     let (client, _events) = connect(&setup.address).await;
     configure(&client).await;
     let refused = client
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::EntryId(EntryId(999)))
+        .buffered_write(
+            "IED1LD1",
+            "LLN0",
+            BLOCK,
+            BufferedWrite::EntryId(EntryId(999)),
+        )
         .await;
     // The block is enabled, so the identifier is refused for that reason before the history is searched.
     assert!(refused.expect("the write is answered").is_err());
@@ -306,23 +316,23 @@ async fn a_purge_is_refused_while_enabled_and_empties_the_history_when_disabled(
         .expect("entry 1 is sent");
 
     let purged = client
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::PurgeBuf)
+        .buffered_write("IED1LD1", "LLN0", BLOCK, BufferedWrite::PurgeBuf)
         .await
         .expect("the write is answered");
     assert!(purged.is_err(), "refused while enabled");
 
     client
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::Enable(false))
+        .buffered_write("IED1LD1", "LLN0", BLOCK, BufferedWrite::Enable(false))
         .await
         .expect("the write is answered")
         .expect("the disabling is accepted");
     client
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::PurgeBuf)
+        .buffered_write("IED1LD1", "LLN0", BLOCK, BufferedWrite::PurgeBuf)
         .await
         .expect("the write is answered")
         .expect("the purge is accepted while disabled");
     let values = client
-        .buffered_values("LD1", "LLN0", BLOCK)
+        .buffered_values("IED1LD1", "LLN0", BLOCK)
         .await
         .expect("the block is read");
     assert_eq!(values.entry_id, EntryId::NULL, "the history is empty");
@@ -334,7 +344,7 @@ async fn the_configuration_of_an_enabled_block_is_refused() {
     let (client, _events) = connect(&setup.address).await;
     configure(&client).await;
     let changed = client
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::BufTm(500))
+        .buffered_write("IED1LD1", "LLN0", BLOCK, BufferedWrite::BufTm(500))
         .await
         .expect("the write is answered");
     assert!(changed.is_err());
@@ -361,14 +371,19 @@ async fn a_general_interrogation_reports_every_member_to_the_association_that_en
     ];
     for step in steps {
         owner
-            .buffered_write("LD1", "LLN0", BLOCK, step)
+            .buffered_write("IED1LD1", "LLN0", BLOCK, step)
             .await
             .expect("the write is answered")
             .expect("the write is accepted");
     }
     tokio::time::sleep(Duration::from_millis(50)).await;
     owner
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::GeneralInterrogation)
+        .buffered_write(
+            "IED1LD1",
+            "LLN0",
+            BLOCK,
+            BufferedWrite::GeneralInterrogation,
+        )
         .await
         .expect("the request is answered")
         .expect("the request is accepted");
@@ -389,12 +404,12 @@ async fn a_reservation_by_one_association_refuses_the_enabling_of_another() {
     let (holder, _holder_events) = connect(&setup.address).await;
     let (other, _other_events) = connect(&setup.address).await;
     holder
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::Reserve(60))
+        .buffered_write("IED1LD1", "LLN0", BLOCK, BufferedWrite::Reserve(60))
         .await
         .expect("the reservation is answered")
         .expect("the reservation is granted");
     let refused = other
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::Enable(true))
+        .buffered_write("IED1LD1", "LLN0", BLOCK, BufferedWrite::Enable(true))
         .await
         .expect("the write is answered");
     assert!(
@@ -402,13 +417,13 @@ async fn a_reservation_by_one_association_refuses_the_enabling_of_another() {
         "another association is refused while reserved"
     );
     holder
-        .buffered_write("LD1", "LLN0", BLOCK, BufferedWrite::Reserve(0))
+        .buffered_write("IED1LD1", "LLN0", BLOCK, BufferedWrite::Reserve(0))
         .await
         .expect("the release is answered")
         .expect("the release is accepted");
     other
         .buffered_write(
-            "LD1",
+            "IED1LD1",
             "LLN0",
             BLOCK,
             BufferedWrite::DataSet(Some("LLN0$DS1".to_string())),

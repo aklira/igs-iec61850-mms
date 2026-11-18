@@ -104,7 +104,7 @@ def test_the_sgcb_is_named_by_the_reference_peer_and_by_our_server(request):
             stderr=subprocess.DEVNULL,
         )
         _wait_port(OURS)
-        our_names = _names(mms, OURS, "LD1")
+        our_names = _names(mms, OURS, "IED1LD1")
     finally:
         if ours is not None:
             ours.terminate()

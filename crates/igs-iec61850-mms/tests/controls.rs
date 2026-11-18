@@ -111,7 +111,7 @@ fn component(name: &str) -> VariableAccessSpecification {
         VariableAccessSpecificationListOfVariableItem {
             variable_specification: VariableSpecification::Name(ObjectName::DomainSpecific(
                 ObjectNameDomainSpecific {
-                    domain_id: Identifier("LD1".to_string()),
+                    domain_id: Identifier("IED1LD1".to_string()),
                     item_id: Identifier(format!("LLN0$CO$Mod${name}")),
                 },
             )),
@@ -274,7 +274,7 @@ async fn a_selection_belongs_to_one_client_and_a_select_of_another_is_null() {
     let (second, _) = clients.next().expect("the second client");
     let selected = select(&first).await;
     assert!(
-        matches!(&selected, AccessResult::Success(Data::VisibleString(reference)) if reference == "LD1/LLN0$CO$Mod"),
+        matches!(&selected, AccessResult::Success(Data::VisibleString(reference)) if reference == "IED1LD1/LLN0$CO$Mod"),
         "{selected:?}"
     );
     let refused = select(&second).await;
@@ -313,7 +313,7 @@ async fn an_enhanced_select_with_value_then_operate_terminates_when_the_status_c
     );
     setup
         .updater
-        .update(&[Change::new("LD1/LLN0$ST$Mod$stVal", Data::Integer(1))])
+        .update(&[Change::new("IED1LD1/LLN0$ST$Mod$stVal", Data::Integer(1))])
         .expect("the status changes");
     let termination = report_within(&mut events, Duration::from_secs(10))
         .await

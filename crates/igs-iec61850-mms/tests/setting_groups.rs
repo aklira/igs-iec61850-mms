@@ -49,7 +49,7 @@ fn item(name: &str) -> VariableAccessSpecification {
         VariableAccessSpecificationListOfVariableItem {
             variable_specification: VariableSpecification::Name(ObjectName::DomainSpecific(
                 ObjectNameDomainSpecific {
-                    domain_id: Identifier("LD1".to_string()),
+                    domain_id: Identifier("IED1LD1".to_string()),
                     item_id: Identifier(name.to_string()),
                 },
             )),
@@ -237,7 +237,7 @@ async fn names_of_ld1(client: &Client) -> Vec<String> {
                     ObjectClassBasicObjectClass::NAMED_VARIABLE,
                 ),
                 object_scope: GetNameListRequestObjectScope::DomainSpecific(Identifier(
-                    "LD1".to_string(),
+                    "IED1LD1".to_string(),
                 )),
                 continue_after: after.clone(),
             }),
@@ -280,7 +280,7 @@ async fn the_sgcb_and_its_attributes_are_named_in_the_domain_with_their_structur
         TIMEOUT,
         client.get_variable_access_attributes(GetVariableAccessAttributesRequest::Name(
             ObjectName::DomainSpecific(ObjectNameDomainSpecific {
-                domain_id: Identifier("LD1".to_string()),
+                domain_id: Identifier("IED1LD1".to_string()),
                 item_id: Identifier(SGCB.to_string()),
             }),
         )),

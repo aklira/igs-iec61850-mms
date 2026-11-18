@@ -79,7 +79,7 @@ async fn start(clients: usize) -> Setup {
 }
 
 fn status() -> Vec<(String, String)> {
-    vec![("LD1".to_string(), "GGIO1$ST$Ind1$stVal".to_string())]
+    vec![("IED1LD1".to_string(), "GGIO1$ST$Ind1$stVal".to_string())]
 }
 
 #[tokio::test]
@@ -89,26 +89,29 @@ async fn a_persistent_data_set_is_listed_and_read_by_another_association() {
     let first = clients.next().expect("the first client");
     let second = clients.next().expect("the second client");
     first
-        .define_data_set("LD1", "DynA", &status())
+        .define_data_set("IED1LD1", "DynA", &status())
         .await
         .expect("defined");
     assert!(second
-        .data_sets("LD1")
+        .data_sets("IED1LD1")
         .await
         .expect("listed")
         .contains(&"DynA".to_string()));
     assert_eq!(
         second
-            .data_set_members("LD1", "DynA")
+            .data_set_members("IED1LD1", "DynA")
             .await
             .expect("the members"),
-        [("LD1".to_string(), "GGIO1$ST$Ind1$stVal".to_string())]
+        [("IED1LD1".to_string(), "GGIO1$ST$Ind1$stVal".to_string())]
     );
     setup
         .updater
-        .update(&[Change::new("LD1/GGIO1$ST$Ind1$stVal", Data::Boolean(true))])
+        .update(&[Change::new(
+            "IED1LD1/GGIO1$ST$Ind1$stVal",
+            Data::Boolean(true),
+        )])
         .expect("updated");
-    let values = second.read_data_set("LD1", "DynA").await.expect("read");
+    let values = second.read_data_set("IED1LD1", "DynA").await.expect("read");
     assert!(
         matches!(values.as_slice(), [Ok(Data::Boolean(true))]),
         "{values:?}"
@@ -123,18 +126,18 @@ async fn a_persistent_data_set_is_deleted_by_another_association() {
     let first = clients.next().expect("the first client");
     let second = clients.next().expect("the second client");
     first
-        .define_data_set("LD1", "DynB", &status())
+        .define_data_set("IED1LD1", "DynB", &status())
         .await
         .expect("defined");
     assert_eq!(
         second
-            .delete_data_set("LD1", "DynB")
+            .delete_data_set("IED1LD1", "DynB")
             .await
             .expect("deleted"),
         1
     );
     assert!(!first
-        .data_sets("LD1")
+        .data_sets("IED1LD1")
         .await
         .expect("listed")
         .contains(&"DynB".to_string()));
@@ -165,7 +168,7 @@ async fn an_association_specific_data_set_is_private_and_dropped_when_its_associ
     );
     assert!(
         !second
-            .data_sets("LD1")
+            .data_sets("IED1LD1")
             .await
             .expect("listed")
             .contains(&"AaA".to_string()),
@@ -189,7 +192,7 @@ async fn a_static_data_set_cannot_be_defined_again_and_a_member_that_is_not_serv
     let client = setup.clients.into_iter().next().expect("a client");
     assert!(
         client
-            .define_data_set("LD1", "LLN0$DS1", &status())
+            .define_data_set("IED1LD1", "LLN0$DS1", &status())
             .await
             .is_err(),
         "the static LLN0$DS1 exists"
@@ -197,9 +200,9 @@ async fn a_static_data_set_cannot_be_defined_again_and_a_member_that_is_not_serv
     assert!(
         client
             .define_data_set(
-                "LD1",
+                "IED1LD1",
                 "DynC",
-                &[("LD1".to_string(), "GGIO1$ST$Nope$stVal".to_string())]
+                &[("IED1LD1".to_string(), "GGIO1$ST$Nope$stVal".to_string())]
             )
             .await
             .is_err(),

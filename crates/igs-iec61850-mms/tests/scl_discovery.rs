@@ -56,19 +56,19 @@ async fn the_sample_configuration_is_discovered_by_the_client() {
             .expect("the association is accepted");
     let client = IecClient::new(client);
 
-    assert_eq!(client.domains().await.unwrap(), vec!["LD1".to_string()]);
-    let mut nodes = client.logical_nodes("LD1").await.unwrap();
+    assert_eq!(client.domains().await.unwrap(), vec!["IED1LD1".to_string()]);
+    let mut nodes = client.logical_nodes("IED1LD1").await.unwrap();
     nodes.sort();
     assert_eq!(nodes, ["GGIO1".to_string(), "LLN0".to_string()]);
 
-    let groups = client.functional_groups("LD1", "GGIO1").await.unwrap();
+    let groups = client.functional_groups("IED1LD1", "GGIO1").await.unwrap();
     let status = groups
         .iter()
         .find(|group| group.functional_constraint == "ST")
         .expect("the status group is discovered");
     assert!(status.objects.contains(&"Ind1".to_string()));
 
-    let names = client.named_variables("LD1").await.unwrap();
+    let names = client.named_variables("IED1LD1").await.unwrap();
     assert!(
         names.contains(&"GGIO1$ST$Ind1$stVal".to_string()),
         "{names:?}"
