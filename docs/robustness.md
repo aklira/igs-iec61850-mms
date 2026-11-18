@@ -80,11 +80,36 @@ calls `Updater::update` for the same item, 1 000 times, about 1 ms apart. Run: `
 
 - Reading: under read load the update call stays at about 3 µs at the median, and at 16 readers its 99th percentile rises from 5 µs to 29 µs.
   The model's lock is held for short sections; the reads do not delay an update by more than a few tens of microseconds on this machine.
-- What this does not measure: the delivery of reports. The reports of a block are computed in the same serial model task, and their cost with
-  many subscribers is not measured here: the workload has no report blocks, and the SCL fixture of the reporting tests is not in the example.
-  RUN-004 asks for that measurement; it remains open (docs/measurements.md has the read measurements of V3).
+- What this does not measure: the reports. They are measured in the next section.
+
+### Report delivery under multi-client load (RUN-004; `examples/contention_reports.rs`)
+
+N clients each enable their own unbuffered block (RPT1 to RPTN) on a served SCL model, with the data-change trigger, no buffer time and no
+integrity period. The driver changes the status `Ind1.stVal` 1 000 times, every 5 ms, and every change produces one report at every client.
+The latency of a report is the time from the update call to its arrival at the client. The server polls for the changes every 1 ms in these
+runs (`ServerConfig::poll_interval`). Run: `cargo run --release --example contention_reports --features scl -- <clients> <updates> <poll ms> <pace ms>`.
+
+| Clients | Changes | Reports received | Out of sequence | Update call p50 | p99 | Report latency p50 | p90 | p99 | max |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 000 | 1 000 of 1 000 | 0 | 0.004 ms | 0.010 ms | 1.802 ms | 2.128 ms | 2.354 ms | 2.638 ms |
+| 4 | 1 000 | 4 000 of 4 000 | 0 | 0.004 ms | 0.007 ms | 1.882 ms | 2.241 ms | 2.460 ms | 2.680 ms |
+| 16 | 1 000 | 16 000 of 16 000 | 0 | 0.004 ms | 0.010 ms | 2.000 ms | 2.292 ms | 2.594 ms | 6.617 ms |
+
+With the default poll interval of the server (50 ms), four clients and 200 changes every 60 ms (one change per poll):
+
+| Clients | Changes | Reports received | Update call p50 | Report latency p50 | p90 | p99 | max |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | 200 | 800 of 800 | 0.007 ms | 26.485 ms | 46.785 ms | 51.549 ms | 51.703 ms |
+
+- Reading: the update call stays at a few microseconds with 16 clients, and every report arrives. The report latency is set by the poll
+  interval of the server: about 2 ms with a 1 ms poll, and about the poll interval (26 ms median, 52 ms maximum) with the default of 50 ms.
+  The latency grows by about 0.5 ms from 1 to 16 clients at the median on this machine.
+- Honest limits: one change gives one report only when the pace is above the poll interval; a faster pace coalesces changes (a first run at
+  1 ms pace, before the poll was lowered, received 688 reports of 1 000 changes). The count of reports is printed, so the case shows up.
+  The workload has one data set of two members and one value changing; the reports of more members, of the integrity period and of the
+  buffered blocks are not in it.
 
 ## Open
 
-- The reporting contention under multi-client load (above).
+- The soak with associations that have reports enabled, and the memory of the server over a long campaign.
 - The bench rows of the file services against the reference peer (X3): the reference example's directory convention is not known.

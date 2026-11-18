@@ -33,3 +33,8 @@ igs-iso9506-mms-link = { path = "../../../igs-iso9506-mms/crates/igs-iso9506-mms
 [dev-dependencies]
 # The tests run a server and a client over TCP and UDP on the loopback interface.
 tokio = { version = "1", features = ["macros", "rt", "time", "net"] }
+
+# The reports of an SCL model: the measurement needs the SCL import (task X8).
+[[example]]
+name = "contention_reports"
+required-features = ["scl"]
