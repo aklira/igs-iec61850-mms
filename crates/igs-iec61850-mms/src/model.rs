@@ -49,8 +49,8 @@ pub fn profile() -> Profile {
         logical_nodes: true,
         data_sets: false,
         arrays: false,
-        // The log services are not declared: the served model holds no journal at run time (N7 of igs-iso9506-mms).
-        logs: false,
+        // The log services are declared: the served model holds the journals of its logs and serves ReadJournal (X2, D-056).
+        logs: true,
         // The file services are declared (8-1 clause 23): the server serves its file store, which may be empty. SetFile
         // (ObtainFile) is not declared, so the negotiation refuses it (X3, D-054).
         files: true,
@@ -257,6 +257,8 @@ pub struct ServedModel {
     static_lists: BTreeSet<(String, String)>,
     /// The setting groups of the devices that declare them (task O3), served through their SGCB.
     pub(crate) settings: Vec<crate::setting_groups::DeviceSettings>,
+    /// The log control blocks and the journals of the configuration (task X2), fed by the updates.
+    logs: crate::logs::Logs,
 }
 
 impl ServedModel {
@@ -272,6 +274,7 @@ impl ServedModel {
             aa_lists: BTreeMap::new(),
             static_lists: BTreeSet::new(),
             settings: Vec::new(),
+            logs: crate::logs::Logs::default(),
         })
     }
 
@@ -361,6 +364,7 @@ impl ServedModel {
         let controls = configured_controls(configuration, &updater)?;
         let settings = crate::setting_groups::devices_of(configuration, &updater);
         crate::setting_groups::list(&mut vmd, &settings)?;
+        let logs = crate::logs::Logs::build(configuration, &mut vmd, &updater)?;
         Ok(Self {
             vmd,
             updater,
@@ -370,6 +374,7 @@ impl ServedModel {
             aa_lists: BTreeMap::new(),
             static_lists,
             settings,
+            logs,
         })
     }
 
@@ -462,6 +467,7 @@ impl Model for ServedModel {
     fn poll(&mut self, _now: Duration) -> Vec<Outbound> {
         let now = self.origin.elapsed();
         let (notices, dropped) = self.updater.take_notices();
+        self.logs.poll(now, &notices, &mut self.vmd, &self.updater);
         let changed: Vec<String> = notices
             .iter()
             .filter(|notice| notice.changed)

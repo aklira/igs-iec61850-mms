@@ -21,6 +21,7 @@
 )]
 
 mod buffered;
+mod logs;
 pub mod model;
 pub mod reports;
 pub mod secure;

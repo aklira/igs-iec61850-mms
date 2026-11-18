@@ -17,6 +17,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 
 use crate::catalogue;
+use crate::logs::LcbConfig;
 use crate::model::layout::{layout, IDENTIFIER_LIMIT};
 use crate::model::{DataObjectSpec, LogicalDevice, LogicalNode, Node, ServerModel};
 use crate::report::brcb::{self, BufferedFields};
@@ -186,6 +187,38 @@ pub struct Configuration {
     /// The setting groups declared by the devices of the IED (a `SettingControl` of the LN0 of a device). Their setting data objects are
     /// served with the variants SG and SE (IEC 61850-7-3 §7.6.1); the services of the setting group control block are not executed.
     pub setting_groups: Vec<SettingGroups>,
+    /// The log control blocks of the IED, in document order (a `LogControl`, IEC 61850-6 §8.6): the blocks that record into a
+    /// journal of their node. A block whose `logName` names no `Log` of its node is refused (SCL-003).
+    pub logs: Vec<LogDecl>,
+    /// The journals of the IED: the `Log` elements of the logical nodes, in document order.
+    pub journals: Vec<JournalDecl>,
+}
+
+/// A log control block as declared (IEC 61850-6 `LogControl`): the configuration of its state machine, and whether it is enabled when
+/// the configuration is loaded (`logEna`, true by default).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogDecl {
+    /// The logical device of the block.
+    pub device: String,
+    /// The logical node of the block.
+    pub node: String,
+    /// The name of the block.
+    pub name: String,
+    /// The configuration of the block, as the log state machine takes it.
+    pub config: LcbConfig,
+    /// Whether the block records when the configuration is loaded (`logEna`).
+    pub log_ena: bool,
+}
+
+/// A journal declared by a `Log` element: the log of its logical node, whose name is `LN$name` in MMS (8-1 §17.3.3.3.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JournalDecl {
+    /// The logical device of the journal.
+    pub device: String,
+    /// The logical node of the journal.
+    pub node: String,
+    /// The name of the journal within the node.
+    pub name: String,
 }
 
 /// The setting groups of a logical device (a `SettingControl`, IEC 61850-6 §8.6), as declared.
@@ -217,6 +250,8 @@ pub fn build(
         buffered: Vec::new(),
         values: Vec::new(),
         setting_groups: Vec::new(),
+        logs: Vec::new(),
+        journals: Vec::new(),
     };
     let Some(ied_element) = root
         .children
@@ -303,6 +338,28 @@ pub fn build(
     let buffered = std::mem::take(&mut builder.buffered);
     let values = std::mem::take(&mut builder.values);
     let setting_groups = std::mem::take(&mut builder.setting_groups);
+    let logs = std::mem::take(&mut builder.logs);
+    let journals = std::mem::take(&mut builder.journals);
+    for log in &logs {
+        let declared = journals.iter().any(|journal| {
+            journal.device == log.device
+                && journal.node == log.node
+                && Some(journal.name.as_str()) == log.config.log_ref.as_deref()
+        });
+        if !declared {
+            builder.diagnostics.push(Diagnostic {
+                code: "SCL-003",
+                file: file.to_string(),
+                path: format!("{}/{}.{}", log.device, log.node, log.name),
+                line: 0,
+                message: format!(
+                    "the log control block {} refers to the log {}, which the node does not declare",
+                    log.name,
+                    log.config.log_ref.as_deref().unwrap_or("(none)")
+                ),
+            });
+        }
+    }
     builder.finish()?;
     Ok(Configuration {
         ied: ied.to_string(),
@@ -313,6 +370,8 @@ pub fn build(
         values,
         addresses,
         setting_groups,
+        logs,
+        journals,
     })
 }
 
@@ -325,6 +384,8 @@ struct Builder<'a> {
     buffered: Vec<BufferedDecl>,
     values: Vec<InstanceValue>,
     setting_groups: Vec<SettingGroups>,
+    logs: Vec<LogDecl>,
+    journals: Vec<JournalDecl>,
 }
 
 impl Builder<'_> {
@@ -807,6 +868,26 @@ impl Builder<'_> {
                 self.setting_control(block, &block_path, device_inst);
                 continue;
             }
+            if block.name == "Log" {
+                self.journals.push(JournalDecl {
+                    device: device_inst.to_string(),
+                    node: node_name.to_string(),
+                    name: name.to_string(),
+                });
+                continue;
+            }
+            if block.name == "LogControl" {
+                self.logs.push(LogDecl {
+                    device: device_inst.to_string(),
+                    node: node_name.to_string(),
+                    name: name.to_string(),
+                    config: log_config(node, block, node_name),
+                    log_ena: block
+                        .attribute("logEna")
+                        .is_none_or(|value| value == "true" || value == "1"),
+                });
+                continue;
+            }
             let buffered = flag(Some(block), "buffered");
             if block.name == "ReportControl"
                 && buffered
@@ -914,6 +995,37 @@ fn report_config(node: &Element, block: &Element, node_name: &str) -> Config {
             .attribute("confRev")
             .and_then(|value| value.parse().ok())
             .unwrap_or(0),
+    }
+}
+
+/// The configuration of a log control block, from its element and the data sets of its node (IEC 61850-8-1 §17.3.3.2, Table 75).
+fn log_config(node: &Element, block: &Element, node_name: &str) -> LcbConfig {
+    let data_sets = node
+        .children
+        .iter()
+        .filter(|child| child.name == "DataSet")
+        .filter_map(|set| {
+            let members = set.children.iter().filter(|c| c.name == "FCDA").count();
+            set.attribute("name")
+                .map(|name| (format!("{node_name}${name}"), members))
+        })
+        .collect();
+    let triggers = block.children.iter().find(|c| c.name == "TrgOps");
+    LcbConfig {
+        name: block.attribute("name").unwrap_or_default().to_string(),
+        log_ref: block.attribute("logName").map(str::to_string),
+        data_set: block
+            .attribute("datSet")
+            .map(|name| format!("{node_name}${name}")),
+        data_sets,
+        trg_ops: TriggerOptions {
+            data_change: flag(triggers, "dchg"),
+            quality_change: flag(triggers, "qchg"),
+            data_update: flag(triggers, "dupd"),
+            integrity: flag(triggers, "period"),
+            general_interrogation: flag(triggers, "gi"),
+        },
+        intg_pd: millis(block, "intgPd"),
     }
 }
 

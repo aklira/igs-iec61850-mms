@@ -411,3 +411,41 @@ fn an_active_setting_group_outside_the_declared_ones_is_refused() {
         "the active setting group 3 is not within the 2 setting groups",
     );
 }
+
+#[test]
+fn a_log_control_block_and_its_log_are_declared_with_their_triggers() {
+    let text = include_str!("../../igs-iec61850-mms/tests/data/logs.cid");
+    let document = parse(text.as_bytes(), &Limits::default()).expect("the document parses");
+    validate(&document, "logs.cid").expect("the document is valid");
+    let configuration = build(&document, "logs.cid", "IED1", &Capabilities::current())
+        .expect("the document builds");
+    assert_eq!(
+        configuration.journals.len(),
+        1,
+        "the Log C1 is a journal of LLN0"
+    );
+    assert_eq!(configuration.journals[0].name, "C1");
+    let log = &configuration.logs[0];
+    assert_eq!(log.name, "LCB1");
+    assert_eq!(log.config.log_ref.as_deref(), Some("C1"));
+    assert_eq!(log.config.data_set.as_deref(), Some("LLN0$DS1"));
+    assert!(
+        log.config.trg_ops.data_change,
+        "the data-change trigger of TrgOps"
+    );
+    assert!(log.log_ena, "logEna is true in the file");
+}
+
+#[test]
+fn a_log_control_block_whose_log_is_not_declared_is_refused() {
+    let text = include_str!("../../igs-iec61850-mms/tests/data/logs.cid")
+        .replace("logName=\"C1\"", "logName=\"Missing\"");
+    let document = parse(text.as_bytes(), &Limits::default()).expect("the document parses");
+    validate(&document, "logs.cid").expect("the document is valid");
+    let diagnostics = build(&document, "logs.cid", "IED1", &Capabilities::current())
+        .expect_err("a dangling logName is refused");
+    assert!(
+        diagnostics.iter().any(|d| d.code == "SCL-003"),
+        "a reference that does not resolve: {diagnostics:?}"
+    );
+}

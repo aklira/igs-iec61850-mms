@@ -254,7 +254,8 @@ pub fn bit_count(bits: &BitString) -> usize {
 }
 
 /// The reasons for inclusion as a bit string: the bits of table 38 (data-change 1 … general-interrogation 5), at least six.
-fn reason_bits(reasons: &[Reason]) -> BitString {
+/// The journals of the logs (X2) encode the reason codes of their entries with it too.
+pub fn reason_bits(reasons: &[Reason]) -> BitString {
     let positions = reasons.iter().map(|reason| match reason {
         Reason::DataChange => 1,
         Reason::QualityChange => 2,
